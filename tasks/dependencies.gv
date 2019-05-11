@@ -1,0 +1,62 @@
+digraph G {
+    // graph settings
+    ranksep=2.0
+    nodesep=2.0
+    overlap="false"
+    node [color="black", shape="rectangle"]
+    // vertice shape is rectangle for a typical task
+    // vertice shape is tripleoctagon for an important milestone
+
+    // definition of graph vertices (tasks)
+    "0SRC" [label="understand original research source code"]
+    "0DS" [label="generate datasets for original src"]
+    "0ENV" [label="set up physical test environment for YOLOv2"]
+    "0TD" [label="test and debug printability of original research", shape="tripleoctagon"]
+    "1CV" [label="research object and facial detection/recognition algorithms"]
+    "1ENV" [label="set up physical test environments for new detection algorithms"]
+    "1SRC" [label="implement new, more robust adversarial algo"]
+    "1DS" [label="generate and transform datasets for new adversarial algo"]
+    "1TD" [label="test and debug printability of new algo", shape="tripleoctagon"]
+    "1ST" [label="implement style objective constraint"]
+    "1TST" [label="test and debug style constraint lagrange multiplier"]
+    "1GAN" [label="implement discriminator constraint"]
+    "1TGAN" [label="test and debug discriminator lagrange multiplier"]
+    "1STGAN" [label="implement beautifying constraints"]
+    "1TD+" [label="test and debug beautified patch", shape="tripleoctagon"]
+    "2CV" [label="research 3D modeling techniques for backpropagation"]
+    "+0" [label="incorporate, seed round fund raising", shape="tripleoctagon"]
+    "+1" [label="fashionable and reliable apparels against facial and person recognition", shape="tripleoctagon"]
+    "+2" [label="establish revenue stream", shape="tripleoctagon"]
+    "+3" [label="Series A", shape="tripleoctagon"]
+    "+4" [label="Series B", shape="tripleoctagon"]
+    "+5" [label="Series C and Beyond", shape="tripleoctagon"]
+    "+6" [label="IPO", shape="tripleoctagon"]
+
+    // edges specify dependencies between graphs
+    // comment out if dependency has been fulfilled
+    "0SRC" -> "0DS"
+    "0DS" -> "0TD"
+    "0ENV" -> "0TD"
+    "0TD" -> "1SRC"
+    "1CV" -> "1ENV"
+    "1CV" -> "1SRC"
+    "1SRC" -> "1DS"
+    "1DS" -> "1TD"
+    "1ENV" -> "1TD"
+    "1TD" -> "1ST"
+    "1TD" -> "1GAN"
+    "1ST" -> "1TST"
+    "1GAN" -> "1TGAN"
+    "1TST" -> "1STGAN"
+    "1TGAN" -> "1STGAN"
+    "1STGAN" -> "1TD+"
+    "1TD+" -> "+0"
+    "2CV" -> "+0"
+    "+0" -> "+1"
+    "+1" -> "+2"
+    "+2" -> "+3"
+    "+3" -> "+4"
+    "+4" -> "+5"
+    "+5" -> "+6"
+}
+

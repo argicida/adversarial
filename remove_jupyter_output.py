@@ -19,9 +19,9 @@ def remove_outputs(nb):
 if __name__ == '__main__':
     fname = sys.argv[1]
     with io.open(fname, 'r') as f:
-      nb = read(f, 'json')
+        nb = read(f, 'json')
     remove_outputs(nb)
     base, ext = os.path.splitext(fname)
     with io.open(fname, 'w', encoding='utf8') as f:
-      write(nb, f, 'json')
+        write(nb, f, 'json')
     print("wrote %s" % fname)
