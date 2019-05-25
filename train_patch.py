@@ -93,7 +93,7 @@ class PatchTrainer(object):
 
                     img = p_img_batch[1, :, :,]
                     img = transforms.ToPILImage()(img.detach().cpu())
-                    img.show()
+                    #img.show()
 
 
                     output = self.darknet_model(p_img_batch)
@@ -141,9 +141,9 @@ class PatchTrainer(object):
             ep_tv_loss = ep_tv_loss/len(train_loader)
             ep_loss = ep_loss/len(train_loader)
 
-            im = transforms.ToPILImage('RGB')(adv_patch_cpu)
-            plt.imshow(im)
-            plt.savefig(f'pics/{time_str}_{self.config.patch_name}_{epoch}.png')
+            #im = transforms.ToPILImage('RGB')(adv_patch_cpu)
+            #plt.imshow(im)
+            #plt.savefig(f'pics/{time_str}_{self.config.patch_name}_{epoch}.png')
 
             scheduler.step(ep_loss)
             if True:
