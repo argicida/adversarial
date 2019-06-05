@@ -2,6 +2,7 @@ from utils import *
 from darknet import Darknet
 import cv2
 
+# TODO: As of 06.04.19, this demo does not run on Perry's computer - might as well run it with the actual Darknet
 def demo(cfgfile, weightfile):
     m = Darknet(cfgfile)
     m.print_network()
@@ -46,10 +47,10 @@ if __name__ == '__main__':
         demo(cfgfile, weightfile)
         #demo('cfg/tiny-yolo-voc.cfg', 'tiny-yolo-voc.weights')
     else:
-        default = 'cfg/tiny-yolo-voc.cfg', 'tiny-yolo-voc.weights'
-        demo('cfg/tiny-yolo-voc.cfg', 'tiny-yolo-voc.weights')
+        default = './cfg/yolov2.cfg', './weights/yolov2.weights'
         print('Usage:')
         print('    python demo.py cfgfile weightfile')
         print('')
         print('    perform detection on camera')
         print('defaulted to ' + default[0] + ' ' + default[1])
+        demo(default[0], default[1])
