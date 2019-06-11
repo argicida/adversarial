@@ -20,6 +20,7 @@ import patch_config
 import sys
 import time
 
+
 class PatchTrainer(object):
     def __init__(self, mode):
         self.config = patch_config.patch_configs[mode]()
@@ -33,6 +34,7 @@ class PatchTrainer(object):
         self.nps_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
         self.total_variation = TotalVariation().cuda()
 
+        # Property in which most data is written to, including the patch
         self.writer = self.init_tensorboard(mode)
 
     def init_tensorboard(self, name=None):
@@ -49,6 +51,7 @@ class PatchTrainer(object):
         :return: Nothing
         """
 
+        # Initialize some settings
         img_size = self.darknet_model.height
         batch_size = self.config.batch_size
         n_epochs = 10000
@@ -77,7 +80,7 @@ class PatchTrainer(object):
         # Creates the object which will optimize the patch, and sets the learning rate
         optimizer = optim.Adam([adv_patch_cpu], lr=self.config.start_learning_rate, amsgrad=True)
 
-        # TODO: Find out exactly what this does. I assume it schedules tasks on the GPU
+        # Schedules tasks on the gpu to optimize performance
         scheduler = self.config.scheduler_factory(optimizer)
 
         et0 = time.time()
@@ -131,7 +134,6 @@ class PatchTrainer(object):
                     tv_loss = tv*2.5
                     det_loss = torch.mean(max_prob)
                     loss = det_loss + nps_loss + torch.max(tv_loss, torch.tensor(0.1).cuda())
-
                     ep_det_loss += det_loss.detach().cpu().numpy()
                     ep_nps_loss += nps_loss.detach().cpu().numpy()
                     ep_tv_loss += tv_loss.detach().cpu().numpy()
@@ -141,7 +143,6 @@ class PatchTrainer(object):
                     loss.backward()
 
                     # Performs one step in optimization of the patch
-                    # TODO: Doesn't the optimizer need to know the gradient to do this? how does it interact with loss?
                     optimizer.step()
 
                     # Clears all gradients after each step. Default is to accumulate them, we don't want that
@@ -149,11 +150,11 @@ class PatchTrainer(object):
                     adv_patch_cpu.data.clamp_(0,1)       # keep patch in image range
 
                     bt1 = time.time()
+                    # Updates the iterations in batches of 5 and writes down new data
                     if i_batch%5 == 0:
                         iteration = self.epoch_length * epoch + i_batch
 
-                        # Reads all the loss measurements into the Patchtrainer somewhere
-                        # I assume this is how optimizer interacts with loss
+                        # Writes all this data to the object's tensorboard item, which was initialized as 'writer'
                         self.writer.add_scalar('total_loss', loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/det_loss', det_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/nps_loss', nps_loss.detach().cpu().numpy(), iteration)
@@ -161,11 +162,10 @@ class PatchTrainer(object):
                         self.writer.add_scalar('misc/epoch', epoch, iteration)
                         self.writer.add_scalar('misc/learning_rate', optimizer.param_groups[0]["lr"], iteration)
 
-                        # Saves the current patch into the trainer somewhere
-                        # TODO: Figure out exactly where this and the loss metrics are saved
+                        # Saves the current to argicida/patches
                         self.writer.add_image('patch', adv_patch_cpu, iteration)
 
-                        # If the training is over, add an endline character, else clearn the following variables
+                    # If the training is over, add an endline character, else clearn the following variables
                     if i_batch + 1 >= len(train_loader):
                         print('\n')
                     else:
@@ -237,9 +237,9 @@ def main():
         print('Possible modes are:')
         print(patch_config.patch_configs)
 
-
     trainer = PatchTrainer(sys.argv[1])
     trainer.train()
+
 
 if __name__ == '__main__':
     main()
