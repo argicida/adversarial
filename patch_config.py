@@ -12,8 +12,8 @@ class BaseConfig(object):
         """
         self.img_dir = "inria/Train/pos"
         self.lab_dir = "inria/Train/pos/yolo-labels"
-        self.cfgfile = "cfg/yolo.cfg"
-        self.weightfile = "weights/yolo.weights"
+        self.cfgfile = "cfg/yolov2.cfg"
+        self.weightfile = "weights/yolov2.weights"
         self.printfile = "non_printability/30values.txt"
         self.patch_size = 300
 
