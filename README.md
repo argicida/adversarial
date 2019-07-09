@@ -22,19 +22,6 @@ pip install tensorboardX tensorboard
 ```
 No installation is necessary, you can simply run the python code straight from this directory.
 
-Make sure you have the YOLOv2 MS COCO weights:
-```
-mkdir weights; curl https://pjreddie.com/media/files/yolov2.weights -o weights/yolo.weights
-```
-
-Get the INRIA dataset:
-```
-curl ftp://ftp.inrialpes.fr/pub/lear/douze/data/INRIAPerson.tar -o inria.tar
-tar xf inria.tar
-mv INRIAPerson inria
-cp -r yolo-labels inria/Train/pos/
-```
-
 # Generating a patch
 `patch_config.py` contains configuration of different experiments. You can design your own experiment by inheriting from the base `BaseConfig` class or an existing experiment. `ReproducePaperObj` reproduces the patch that minimizes object score from the paper (With a lower batch size to fit on a desktop GPU).
 
