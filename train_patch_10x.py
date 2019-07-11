@@ -1,5 +1,5 @@
 """
-Training code for Adversarial patch training
+simulation for when we have many more target architectures
 
 
 """
@@ -25,15 +25,20 @@ class PatchTrainer(object):
     def __init__(self, mode):
         self.config = patch_config.patch_configs[mode]()
 
-        self.darknet_model = Darknet(self.config.cfgfile)
-        self.darknet_model.load_weights(self.config.weightfile)
-        self.darknet_model = self.darknet_model.eval().cuda() # TODO: Why eval?
-        # TODO: note from Perry - eval() sets the target architecture to be static and not trainable,
-        #  which is desired when training patches
+        self.target_architectures = []
+        for i in range(10):
+            self.target_architectures.append(Darknet(self.config.cfgfile))
+            self.target_architectures[i].load_weights(self.config.weightfile)
+            self.target_architectures[i] = self.target_architectures[i].eval().cuda()
+
+        # self.darknet_model = Darknet(self.config.cfgfile)
+        # self.darknet_model.load_weights(self.config.weightfile)
+        # self.darknet_model = self.darknet_model.eval().cuda()
+
         self.patch_applier = PatchApplier().cuda()
         self.patch_transformer = PatchTransformer().cuda()
         self.prob_extractor = MaxProbExtractor(0, 80, self.config).cuda()
-        self.non_printability_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
+        self.nps_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
         self.total_variation = TotalVariation().cuda()
 
         # Property in which most data is written to, including the patch
@@ -54,7 +59,7 @@ class PatchTrainer(object):
         """
 
         # Initialize some settings
-        img_size = self.darknet_model.height
+        img_size = self.target_architectures[0].height
         batch_size = self.config.batch_size
         n_epochs = 10000
         max_lab = 14
@@ -109,27 +114,25 @@ class PatchTrainer(object):
 
                     # Creates a patch transformer with a default grey patch. Can't find this object anywhere but most
                     # Likely it allows the patch to be moved around on inputted images.
-                    # TODO: Find documentation for this object
                     adv_batch_t = self.patch_transformer(adv_patch, lab_batch, img_size, do_rotate=True, rand_loc=False)
 
                     # Can't find this object anywhere else, most likely allows the patch to be put into inputted photos
-                    # TODO: find documentation for this object
                     p_img_batch = self.patch_applier(img_batch, adv_batch_t)
-                    p_img_batch = F.interpolate(p_img_batch, (self.darknet_model.height, self.darknet_model.width))
+                    p_img_batch = F.interpolate(p_img_batch, (self.target_architectures[0].height, self.target_architectures[0].width))
 
 
-                    # TODO: Figure out exactly what these transforms are doing
                     img = p_img_batch[1, :, :,]
                     img = transforms.ToPILImage()(img.detach().cpu())
                     # img.show()
 
                     # Looks to be where the given patch is evaluated, however all these objects are not included within
                     # The given darknet model. Documentation for the original needs to be found and researched
-                    # TODO: Read documentation for original Darknet model
-                    output = self.darknet_model(p_img_batch)
-                    max_prob = self.prob_extractor(output)
+                    max_prob = torch.tensor(()).new_zeros(1)
+                    for target in self.target_architectures:
+                        output = target(p_img_batch)
+                        max_prob += self.prob_extractor(output)
 
-                    non_printability_score = self.non_printability_calculator(adv_patch)
+                    non_printability_score = self.nps_calculator(adv_patch)
                     patch_variation = self.total_variation(adv_patch)
 
                     # Calculates the loss in the new patch, then mashes them all together
@@ -159,9 +162,9 @@ class PatchTrainer(object):
 
                         # Writes all this data to the object's tensorboard item, which was initialized as 'writer'
                         self.writer.add_scalar('total_loss', loss.detach().cpu().numpy(), iteration)
-                        self.writer.add_scalar('loss/det_loss', detection_loss.detach().cpu().numpy(), iteration)
+                        self.writer.add_scalar('loss/detection_loss', detection_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
-                        self.writer.add_scalar('loss/tv_loss', patch_variation_loss.detach().cpu().numpy(), iteration)
+                        self.writer.add_scalar('loss/patch_variation_loss', patch_variation_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('misc/epoch', epoch, iteration)
                         self.writer.add_scalar('misc/learning_rate', optimizer.param_groups[0]["lr"], iteration)
 
