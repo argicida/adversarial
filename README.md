@@ -22,3 +22,7 @@ python train_patch.py paper_obj
 ```
 ### Ten Times the Original Target Size
 This one challenges the hardware by replicating the yolov2 target architecture ten times
+You can simulate the situation by running:
+```
+python train_patch_10x.py paper_obj
+```
