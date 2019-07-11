@@ -7,6 +7,13 @@ To visualise progress we use tensorboardX which can be installed using pip:
 ```
 pip install tensorboardX tensorboard
 ```
+Also, since in our git the weights are ignored (too large and not reliably transmitted),
+you need to download them manually.
+
+For yolov2, download the weights by executing
+```
+curl https://pjreddie.com/media/files/yolov2.weights -o weights/yolov2.weights
+```
 
 # Testing Scenarios
 ### Reproduce Original Research
