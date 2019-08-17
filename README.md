@@ -5,6 +5,7 @@ to do this see: https://pytorch.org/
 
 To easily set up the dependencies using Python 3 virtual environment, run
 ```
+chmod +x ./setup_venv.sh
 ./setup_venv.sh
 ```
 
