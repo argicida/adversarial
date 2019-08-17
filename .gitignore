@@ -1,3 +1,7 @@
+# slurm output
+blackbox.err
+blackbox.out
+
 # patch testing output
 testing/*/*.png
 testing/*/*/*.txt
