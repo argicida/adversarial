@@ -23,14 +23,14 @@
 
 # run time request
 # day-hour:minute:second
-#SBATCH -t 5:0:0
+#SBATCH -t 24:0:0
 
 
 # use the "blackbox" account, which corresponds to our project name
 # put the job in the "onboard" partition (cuz we are noobs) 
 # -n 4 requests 4 CPUs
-# --gres=gpu:v100:4 requests 4 Nvidia v100 GPUs
-#SBATCH -A blackbox -p onboard -n 4 --gres=gpu:v100:4
+# --gres=gpu:rtx600:1 requests 1 Nvidia rtx6000 GPU (which gives us 24 gig of VRAM)
+#SBATCH -A blackbox -p onboard -n 4 --gres=gpu:rtx600:1
 
 
 # Job memory requirements in MB
@@ -46,8 +46,6 @@
 # spack configures the software stack for the session
 # spack list for all available packages
 # spack info for more information on a particular package
-spack load python@3.6.8
-spack load py-pytorch ^python@3.6.8 # this gives us torchvision and numpy
-spack load py-pillow ^python@3.6.8 # this gives us PIL and pickle
-python3 train_patch.py paper_obj
-
+source ./venv/bin/activate
+python test_patch.py
+deactivate

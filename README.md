@@ -3,10 +3,11 @@ We use Python 3.6.
 Make sure that you have a working implementation of PyTorch installed,
 to do this see: https://pytorch.org/
 
-To visualise progress we use tensorboardX which can be installed using pip:
+To easily set up the dependencies using Python 3 virtual environment, run
 ```
-pip install tensorboardX tensorboard
+./setup_venv.sh
 ```
+
 Also, since in our git the weights are ignored (too large and not reliably transmitted),
 you need to download them manually.
 
@@ -32,4 +33,10 @@ This one challenges the hardware by replicating the yolov2 target architecture t
 You can simulate the situation by running:
 ```
 python train_patch_10x.py paper_obj
+```
+### Patch Testing
+Not sure what it really does yet, but it iterates through tested images and apply patch onto them, and saves its output
+to clean_results.json, noise_results.json, and patch_results.json. It also creates a ton of txt and png files in testing/
+```
+python test_patch.py
 ```
