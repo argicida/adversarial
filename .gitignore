@@ -1,3 +1,10 @@
+# patch testing output
+testing/*/*.png
+testing/*/*/*.txt
+clean_results.json
+noise_results.json
+patch_results.json
+
 # weights
 weights/
 
