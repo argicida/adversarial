@@ -27,10 +27,11 @@
 
 
 # use the "blackbox" account, which corresponds to our project name
-# put the job in the "onboard" partition (cuz we are noobs) 
+# put the job in the "interactive" partition, for the RTX6000 GPU on theocho.rc.rit.edu
+# alternatively, we have access to the "onboard" partition
 # -n 4 requests 4 CPUs
 # --gres=gpu:rtx600:1 requests 1 Nvidia rtx6000 GPU (which gives us 24 gig of VRAM)
-#SBATCH -A blackbox -p onboard -n 4 --gres=gpu:rtx6000:1
+#SBATCH -A blackbox -p interactive -n 4 --gres=gpu:rtx6000:1
 
 
 # Job memory requirements in MB
