@@ -14,14 +14,18 @@ def interpret_results(filename):
 
 
 def main():
-    interpret_results("class_only.json")
-    interpret_results("class_shift.json")
+    '''
+    The 'score' category in the json measures object score, how likely the algorithm this there is an object where the
+    person is in the picture. The threshold for saying a person is there is 0.4, and this script prints the fraction
+    of images which have an object score above 0.4 for each approach
+    :return:
+    '''
+    # No patch, no noise, just a clean picture
     interpret_results("clean_results.json")
+    # Results with a randomized noise patch
     interpret_results("noise_results.json")
+    # Results with a trained patch
     interpret_results("patch_results.json")
-    interpret_results("patch_simen.json")
-    interpret_results("patch_up.json")
-    interpret_results("up_results.json")
 
 
 if __name__ == '__main__':
