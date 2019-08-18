@@ -19,6 +19,7 @@ if __name__ == '__main__':
     imgdir = "inria/Test/pos"
     cfgfile = "cfg/yolov2.cfg"
     weightfile = "weights/yolov2.weights"
+    # To change the patch you're testing, change the patchfile variable to the path of the desired patch
     patchfile = "saved_patches/patch11.jpg"
     #patchfile = "/home/wvr/Pictures/individualImage_upper_body.png"
     #patchfile = "/home/wvr/Pictures/class_only.png"
@@ -49,14 +50,14 @@ if __name__ == '__main__':
     patch_results = []
     
     print("Done")
-    #Loop over cleane beelden
+    # Walk over clean images
     for imgfile in os.listdir(imgdir):
         print("new image")
         if imgfile.endswith('.jpg') or imgfile.endswith('.png'):
-            name = os.path.splitext(imgfile)[0]    #image name w/o extension
+            name = os.path.splitext(imgfile)[0]    # image name w/o extension
             txtname = name + '.txt'
             txtpath = os.path.abspath(os.path.join(savedir, 'clean/', 'yolo-labels/', txtname))
-            # open beeld en pas aan naar yolo input size
+            # open image and adjust to yolo input size
             imgfile = os.path.abspath(os.path.join(imgdir, imgfile))
             img = Image.open(imgfile).convert('RGB')
             w,h = img.size
@@ -75,16 +76,16 @@ if __name__ == '__main__':
             resize = transforms.Resize((img_size,img_size))
             padded_img = resize(padded_img)
             cleanname = name + ".png"
-            #sla dit beeld op
+            # save this image
             padded_img.save(os.path.join(savedir, 'clean/', cleanname))
             
-            #genereer een label file voor het gepadde beeld
+            # generate a label file for the padded image
             boxes = do_detect(darknet_model, padded_img, 0.4, 0.4, True)
             boxes = nms(boxes, 0.4)
             textfile = open(txtpath,'w+')
             for box in boxes:
                 cls_id = box[6]
-                if(cls_id == 0):   #if person
+                if(cls_id == 0):   # if person
                     x_center = box[0]
                     y_center = box[1]
                     width = box[2]
@@ -98,7 +99,7 @@ if __name__ == '__main__':
                                           'category_id': 1})
             textfile.close()
 
-            #lees deze labelfile terug in als tensor            
+            # read this label file back as a tensor
             if os.path.getsize(txtpath):       #check to see if label file contains data. 
                 label = np.loadtxt(txtpath)
             else:
@@ -113,7 +114,7 @@ if __name__ == '__main__':
             img_fake_batch = padded_img.unsqueeze(0)
             lab_fake_batch = label.unsqueeze(0).cuda()
             
-            #transformeer patch en voeg hem toe aan beeld
+            # transform patch and add it to image
             adv_batch_t = patch_transformer(adv_patch, lab_fake_batch, img_size, do_rotate=True, rand_loc=False)
             p_img_batch = patch_applier(img_fake_batch, adv_batch_t)
             p_img = p_img_batch.squeeze(0)
@@ -121,7 +122,7 @@ if __name__ == '__main__':
             properpatchedname = name + "_p.png"
             p_img_pil.save(os.path.join(savedir, 'proper_patched/', properpatchedname))
             
-            #genereer een label file voor het beeld met sticker
+            # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'proper_patched/', 'yolo-labels/', txtname))
             boxes = do_detect(darknet_model, p_img_pil, 0.01, 0.4, True)
@@ -129,7 +130,7 @@ if __name__ == '__main__':
             textfile = open(txtpath,'w+')
             for box in boxes:
                 cls_id = box[6]
-                if(cls_id == 0):   #if person
+                if(cls_id == 0):   # if person
                     x_center = box[0]
                     y_center = box[1]
                     width = box[2]
@@ -138,7 +139,7 @@ if __name__ == '__main__':
                     patch_results.append({'image_id': name, 'bbox': [x_center.item() - width.item() / 2, y_center.item() - height.item() / 2, width.item(), height.item()], 'score': box[4].item(), 'category_id': 1})
             textfile.close()
 
-            #maak een random patch, transformeer hem en voeg hem toe aan beeld
+            # make a random patch, transform it and add it to the image
             random_patch = torch.rand(adv_patch_cpu.size()).cuda()
             adv_batch_t = patch_transformer(random_patch, lab_fake_batch, img_size, do_rotate=True, rand_loc=False)
             p_img_batch = patch_applier(img_fake_batch, adv_batch_t)
@@ -147,7 +148,7 @@ if __name__ == '__main__':
             properpatchedname = name + "_rdp.png"
             p_img_pil.save(os.path.join(savedir, 'random_patched/', properpatchedname))
             
-            #genereer een label file voor het beeld met random patch
+            # generate a label file for the random patch image
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'random_patched/', 'yolo-labels/', txtname))
             boxes = do_detect(darknet_model, p_img_pil, 0.01, 0.4, True)
@@ -155,7 +156,7 @@ if __name__ == '__main__':
             textfile = open(txtpath,'w+')
             for box in boxes:
                 cls_id = box[6]
-                if(cls_id == 0):   #if person
+                if(cls_id == 0):   # if person
                     x_center = box[0]
                     y_center = box[1]
                     width = box[2]
