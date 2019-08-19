@@ -87,8 +87,8 @@ if __name__ == '__main__':
             """ at this point, clean images are prepped to be analyzed by yolo """
 
             # generate a label file for the padded image
-            boxes = do_detect(darknet_model, padded_img, 0.4, 0.4, True)
-            boxes = nms(boxes, 0.4)
+            boxes = do_detect(darknet_model, padded_img, 0.4, 0.4, True) # run yolo object detection on image
+            boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes
             textfile = open(txtpath,'w+')
             for box in boxes:
                 cls_id = box[6]
@@ -106,6 +106,8 @@ if __name__ == '__main__':
                                           'category_id': 1})
             textfile.close()
 
+            """ At this point, image recognition has been ran, and humans detected in images have been tracked"""
+
             # read this label file back as a tensor
             if os.path.getsize(txtpath):       #check to see if label file contains data. 
                 label = np.loadtxt(txtpath)
@@ -117,7 +119,7 @@ if __name__ == '__main__':
 
             
             transform = transforms.ToTensor()
-            padded_img = transform(padded_img).cuda()
+            padded_img = transform(padded_img).cuda() # Eric: why the .cuda() on each tensor generated?
             img_fake_batch = padded_img.unsqueeze(0)
             lab_fake_batch = label.unsqueeze(0).cuda()
             
