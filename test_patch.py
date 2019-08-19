@@ -38,9 +38,11 @@ if __name__ == '__main__':
 
     patch_size = 300
 
+    # Transform image to correct size
     patch_img = Image.open(patchfile).convert('RGB')
     tf = transforms.Resize((patch_size,patch_size))
     patch_img = tf(patch_img)
+    # create tensor to represent image
     tf = transforms.ToTensor()
     adv_patch_cpu = tf(patch_img)
     adv_patch = adv_patch_cpu.cuda()
@@ -61,9 +63,11 @@ if __name__ == '__main__':
             imgfile = os.path.abspath(os.path.join(imgdir, imgfile))
             img = Image.open(imgfile).convert('RGB')
             w,h = img.size
+            # ensure image is square
             if w==h:
                 padded_img = img
             else:
+                # pad image with grey
                 dim_to_pad = 1 if w<h else 2
                 if dim_to_pad == 1:
                     padding = (h - w) / 2
@@ -73,12 +77,15 @@ if __name__ == '__main__':
                     padding = (w - h) / 2
                     padded_img = Image.new('RGB', (w, w), color=(127,127,127))
                     padded_img.paste(img, (0, int(padding)))
+            # resize image to fit into yolo neural net
             resize = transforms.Resize((img_size,img_size))
             padded_img = resize(padded_img)
             cleanname = name + ".png"
             # save this image
             padded_img.save(os.path.join(savedir, 'clean/', cleanname))
-            
+
+            """ at this point, clean images are prepped to be analyzed by yolo """
+
             # generate a label file for the padded image
             boxes = do_detect(darknet_model, padded_img, 0.4, 0.4, True)
             boxes = nms(boxes, 0.4)
