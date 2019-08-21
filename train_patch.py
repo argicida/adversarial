@@ -19,6 +19,7 @@ import subprocess
 import patch_config
 import sys
 import time
+import datetime
 
 
 class PatchTrainer(object):
@@ -195,13 +196,16 @@ class PatchTrainer(object):
                 print('  NPS LOSS: ', ep_nps_loss)
                 print('   TV LOSS: ', ep_tv_loss)
                 print('EPOCH TIME: ', et1-et0)
-                im = transforms.ToPILImage('RGB')(adv_patch_cpu)
-                plt.imshow(im)
-                plt.show()
-                im.save("saved_patches/eric_reliability_demo.jpg")
                 del adv_batch_t, output, max_prob, detection_loss, p_img_batch, printability_loss, patch_variation_loss, loss
                 torch.cuda.empty_cache()
             et0 = time.time()
+
+            # At the end of training, save image
+            im = transforms.ToPILImage('RGB')(adv_patch_cpu)
+            plt.imshow(im)
+            plt.show()
+            # Specifies file to save trained patch to
+            im.save("saved_patches/" + datetime.datetime.now().isoformat())
 
     def generate_patch(self, type):
         """

@@ -98,6 +98,7 @@ if __name__ == '__main__':
                     width = box[2]
                     height = box[3]
                     textfile.write(f'{cls_id} {x_center} {y_center} {width} {height}\n')
+                    # add detected box to label file (only for people)
                     clean_results.append({'image_id': name, 'bbox': [x_center.item() - width.item() / 2,
                                                                      y_center.item() - height.item() / 2,
                                                                      width.item(),
@@ -115,11 +116,12 @@ if __name__ == '__main__':
                 label = np.ones([5])
             label = torch.from_numpy(label).float()
             if label.dim() == 1:
+                # Eric: Unsure what purpose this unsqueeze serves
                 label = label.unsqueeze(0)
 
-            
+            # Tensorify the image
             transform = transforms.ToTensor()
-            padded_img = transform(padded_img).cuda() # Eric: why the .cuda() on each tensor generated?
+            padded_img = transform(padded_img).cuda()
             img_fake_batch = padded_img.unsqueeze(0)
             lab_fake_batch = label.unsqueeze(0).cuda()
             
