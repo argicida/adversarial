@@ -205,7 +205,7 @@ class PatchTrainer(object):
         plt.imshow(im)
         plt.show()
         # Specifies file to save trained patch to
-        im.save("saved_patches/patch_" + time.strftime("%Y-%m-%d_%H-%M-%S") + ".jpg")
+        im.save("saved_patches/patch_" + time.strftime("%Y-%m-%d_%H-%M-%S") + "_" + n_epochs + "_epochs.jpg")
 
     def generate_patch(self, type):
         """
