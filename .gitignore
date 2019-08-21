@@ -2,6 +2,10 @@
 blackbox.err
 blackbox.out
 
+# slurm scripts
+slurm_test_patch.sh
+slurm_train_patch.sh
+
 # patch testing output
 testing/*/*.png
 testing/*/*/*.txt
