@@ -7,7 +7,7 @@ import pandas as pd
 def interpret_results(filename):
     df = pd.read_json(filename)
     total_count = df.count().values[0]
-    df = df.drop(df[df.score < 0.4].index)
+    df = df[df.score < 0.4]
     success_count = df.count().values[0]
     success_rate = success_count/total_count
     print("Success Rate for " + filename + ": " + str(success_rate))
@@ -17,7 +17,7 @@ def main():
     '''
     The 'score' category in the json measures object score, how likely the algorithm this there is an object where the
     person is in the picture. The threshold for saying there is an object where the person is supposed to be is
-    0.4, and this script prints the fraction of images which have an object score above 0.4 for each approach
+    0.4, and this script prints the percentage of the time that each approach evaded detection
     :return:
     '''
     # No patch, no noise, just a clean picture
