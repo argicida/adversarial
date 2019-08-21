@@ -57,7 +57,7 @@ class PatchTrainer(object):
         # Initialize some settings
         img_size = self.darknet_model.height
         batch_size = self.config.batch_size
-        n_epochs = 5
+        n_epochs = 2
         max_lab = 14
 
         time_str = time.strftime("%Y%m%d-%H%M%S")
@@ -200,12 +200,12 @@ class PatchTrainer(object):
                 torch.cuda.empty_cache()
             et0 = time.time()
 
-            # At the end of training, save image
-            im = transforms.ToPILImage('RGB')(adv_patch_cpu)
-            plt.imshow(im)
-            plt.show()
-            # Specifies file to save trained patch to
-            im.save("saved_patches/" + datetime.datetime.now().isoformat())
+        # At the end of training, save image
+        im = transforms.ToPILImage('RGB')(adv_patch_cpu)
+        plt.imshow(im)
+        plt.show()
+        # Specifies file to save trained patch to
+        im.save("saved_patches/patch_" + time.strftime("%Y-%m-%d_%H-%M-%S") + ".jpg")
 
     def generate_patch(self, type):
         """
