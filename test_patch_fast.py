@@ -147,11 +147,11 @@ if __name__ == '__main__':
             for box in boxes:
                 cls_id = box[6]
                 if(cls_id == 0):   # if person
-                    if boxes[4].item() < 0.4: # If the
+                    if box[4].item() < 0.4: # If the
                         noise_results = noise_results + 1
 
-print("clean_results: " + clean_results/clean_results)
-print("noise_results: " + noise_results/clean_results)
-print("patch_results: " + patch_results/clean_results)
+	print("clean_results: " + clean_results/clean_results)
+	print("noise_results: " + noise_results/clean_results)
+	print("patch_results: " + patch_results/clean_results)
             
 
