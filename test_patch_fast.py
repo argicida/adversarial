@@ -79,7 +79,7 @@ if __name__ == '__main__':
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
             properpatchedname = name + "_p.png"
-            p_img_pil.save(os.path.join(savedir, 'proper_patched/', properpatchedname))
+            i# p_img_pil.save(os.path.join(savedir, 'proper_patched/', properpatchedname))
             
             # check to see if the generated patch fools recognition
             boxes = do_detect(darknet_model, p_img_pil, 0.01, 0.4, True)
@@ -97,7 +97,7 @@ if __name__ == '__main__':
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
             properpatchedname = name + "_rdp.png"
-            p_img_pil.save(os.path.join(savedir, 'random_patched/', properpatchedname))
+            # p_img_pil.save(os.path.join(savedir, 'random_patched/', properpatchedname))
             
             # check to see if the random patch evades recognition
             boxes = do_detect(darknet_model, p_img_pil, 0.01, 0.4, True)
