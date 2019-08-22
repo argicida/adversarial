@@ -87,7 +87,7 @@ if __name__ == '__main__':
             """ at this point, clean images are prepped to be analyzed by yolo """
 
             # generate a label file for the padded image
-            boxes = do_detect(darknet_model, padded_img, 0.4, 0.4, True) # run yolo object detection on image
+            boxes = do_detect(darknet_model, padded_img, 0.01, 0.4, True) # run yolo object detection on image
             boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes
             textfile = open(txtpath,'w+')
             for box in boxes:
