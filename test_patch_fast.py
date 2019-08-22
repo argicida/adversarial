@@ -15,7 +15,7 @@ import json
 
 
 if __name__ == '__main__':
-    imgdir = "inria/Test/pos"
+    imgdir = "testing/clean"
     cfgfile = "cfg/yolov2.cfg"
     weightfile = "weights/yolov2.weights"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
@@ -57,39 +57,6 @@ if __name__ == '__main__':
             imgfile = os.path.abspath(os.path.join(imgdir, imgfile))
             img = Image.open(imgfile).convert('RGB')
             w,h = img.size
-            # ensure image is square
-            if w==h:
-                padded_img = img
-            else:
-                # pad image with grey
-                dim_to_pad = 1 if w<h else 2
-                if dim_to_pad == 1:
-                    padding = (h - w) / 2
-                    padded_img = Image.new('RGB', (h,h), color=(127,127,127))
-                    padded_img.paste(img, (int(padding), 0))
-                else:
-                    padding = (w - h) / 2
-                    padded_img = Image.new('RGB', (w, w), color=(127,127,127))
-                    padded_img.paste(img, (0, int(padding)))
-            # resize image to fit into yolo neural net
-            resize = transforms.Resize((img_size,img_size))
-            padded_img = resize(padded_img)
-            cleanname = name + ".png"
-            # save this image
-            padded_img.save(os.path.join(savedir, 'clean/', cleanname))
-
-            """ at this point, clean images are prepped to be analyzed by yolo """
-
-            # generate a label file for the padded image
-            boxes = do_detect(darknet_model, padded_img, 0.4, 0.4, True) # run yolo object detection on image
-            boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes
-            for box in boxes:
-                cls_id = box[6]
-                if cls_id == 0:   # if person
-                    clean_results = clean_results + 1
-
-            """ At this point, image recognition has been ran, and humans detected in images have been tracked"""
-
             # read this label file back as a tensor
             if os.path.getsize(txtpath): # check to see if label file contains data.
                 label = np.loadtxt(txtpath)
@@ -102,8 +69,8 @@ if __name__ == '__main__':
 
             # Tensorify the image
             transform = transforms.ToTensor()
-            padded_img = transform(padded_img).cuda()
-            img_fake_batch = padded_img.unsqueeze(0)
+            img = transform(img).cuda()
+            img_fake_batch = img.unsqueeze(0)
             lab_fake_batch = label.unsqueeze(0).cuda()
             
             # transform patch and add it to image
@@ -118,8 +85,9 @@ if __name__ == '__main__':
             boxes = do_detect(darknet_model, p_img_pil, 0.01, 0.4, True)
             boxes = nms(boxes, 0.4)
             for box in boxes:
+                clean_results = clean_results + 1
                 cls_id = box[6]
-                if cls_id == 0 and box[4].item() < 0.4: # if the threshold for detecting a person is met
+                if cls_id == 0 and box[4].item() > 0.4: # if the threshold for detecting a person is met
                         patch_results = patch_results + 1
 
             # make a random patch, transform it and add it to the image
