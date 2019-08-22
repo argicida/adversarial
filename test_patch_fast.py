@@ -85,7 +85,7 @@ if __name__ == '__main__':
             boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes
             for box in boxes:
                 cls_id = box[6]
-                if cls_id == 0:   # if person
+                if cls_id == 0 and box[4].items() > 4:   # if person
                     clean_results = clean_results + 1
 
             """ At this point, image recognition has been ran, and humans detected in images have been tracked"""
@@ -119,7 +119,7 @@ if __name__ == '__main__':
             boxes = nms(boxes, 0.4)
             for box in boxes:
                 cls_id = box[6]
-                if cls_id == 0 and box[4].item() < 0.4: # if the threshold for detecting a person is met
+                if cls_id == 0 and box[4].item() > 0.4: # if the threshold for detecting a person is met
                         patch_results = patch_results + 1
 
             # make a random patch, transform it and add it to the image
