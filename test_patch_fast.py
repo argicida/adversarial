@@ -83,18 +83,10 @@ if __name__ == '__main__':
             # generate a label file for the padded image
             boxes = do_detect(darknet_model, padded_img, 0.4, 0.4, True) # run yolo object detection on image
             boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes
-            textfile = open(txtpath,'w+')
             for box in boxes:
                 cls_id = box[6]
                 if cls_id == 0:   # if person
-                    x_center = box[0]
-                    y_center = box[1]
-                    width = box[2]
-                    height = box[3]
-                    textfile.write(f'{cls_id} {x_center} {y_center} {width} {height}\n')
-                    # add detected box to label file (only for people)
                     clean_results = clean_results + 1
-            textfile.close()
 
             """ At this point, image recognition has been ran, and humans detected in images have been tracked"""
 
