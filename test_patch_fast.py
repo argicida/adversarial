@@ -106,8 +106,8 @@ if __name__ == '__main__':
                 if box[6] == 0 and (box[4].item() > 0.4): # If the threshold for detecting a person is met
                     noise_results = noise_results + 1
 
-    print("clean_results: " + str(clean_results/clean_results))
-    print("noise_results: " + str(noise_results/clean_results))
-    print("patch_results: " + str(patch_results/clean_results))
+    f = open("test_results.csv", 'a')
+    f.write(str(clean_results/clean_results) + "," + str(patch_results/clean_results) + "," + str(noise_results/clean_results) + "\n")
+    f.close()
             
 

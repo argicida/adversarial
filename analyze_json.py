@@ -7,7 +7,7 @@ import pandas as pd
 def interpret_results(filename):
     df = pd.read_json(filename)
     total_count = df.count().values[0]
-    df = df[df.score < 0.25]
+    df = df[df.score > 0.4]
     success_count = df.count().values[0]
     success_rate = success_count/total_count
     print("Success Rate for " + filename + ": " + str(success_rate))
@@ -16,8 +16,8 @@ def interpret_results(filename):
 def main():
     '''
     The 'score' category in the json measures object score, how likely the algorithm this there is an object where the
-    person is in the picture. The threshold for saying there is an object where the person is supposed to be is
-    0.25, and this script prints the the percentage of times the given approach evaded detection successfully
+    person is in the picture. The threshold used by the researchers is 0.4, so the number outputted is the ratio of
+    pictures which evade detection to total pictures
     :return:
     '''
     # No patch, no noise, just a clean picture
