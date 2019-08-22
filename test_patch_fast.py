@@ -86,8 +86,7 @@ if __name__ == '__main__':
             boxes = nms(boxes, 0.4)
             for box in boxes:
                 clean_results = clean_results + 1
-                cls_id = box[6]
-                if cls_id == 0 and box[4].item() > 0.4: # if the threshold for detecting a person is met
+                if box[4].item() > 0.4: # if the threshold for detecting a person is met
                         patch_results = patch_results + 1
 
             # make a random patch, transform it and add it to the image
@@ -103,8 +102,7 @@ if __name__ == '__main__':
             boxes = do_detect(darknet_model, p_img_pil, 0.01, 0.4, True)
             boxes = nms(boxes, 0.4)
             for box in boxes:
-                cls_id = box[6]
-                if cls_id == 0 and box[4].item() < 0.4: # If the threshold for detecting a person is met
+                if box[4].item() < 0.4: # If the threshold for detecting a person is met
                         noise_results = noise_results + 1
 
     print("clean_results: " + str(clean_results))
