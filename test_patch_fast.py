@@ -149,8 +149,8 @@ if __name__ == '__main__':
                     if box[4].item() < 0.4: # If the threshold for detecting a person is met
                         noise_results = noise_results + 1
 
-    print("clean_results: " + clean_results)
-    print("noise_results: " + noise_results)
-    print("patch_results: " + patch_results)
+    print("clean_results: " + str(clean_results))
+    print("noise_results: " + str(noise_results))
+    print("patch_results: " + str(patch_results))
             
 
