@@ -15,7 +15,6 @@ import json
 
 
 if __name__ == '__main__':
-    print("Setting everything up")
     imgdir = "inria/Test/pos"
     cfgfile = "cfg/yolov2.cfg"
     weightfile = "weights/yolov2.weights"
@@ -87,7 +86,7 @@ if __name__ == '__main__':
             textfile = open(txtpath,'w+')
             for box in boxes:
                 cls_id = box[6]
-                if(cls_id == 0):   # if person
+                if cls_id == 0:   # if person
                     x_center = box[0]
                     y_center = box[1]
                     width = box[2]
@@ -100,7 +99,7 @@ if __name__ == '__main__':
             """ At this point, image recognition has been ran, and humans detected in images have been tracked"""
 
             # read this label file back as a tensor
-            if os.path.getsize(txtpath):       #check to see if label file contains data. 
+            if os.path.getsize(txtpath): # check to see if label file contains data.
                 label = np.loadtxt(txtpath)
             else:
                 label = np.ones([5])
@@ -128,7 +127,7 @@ if __name__ == '__main__':
             boxes = nms(boxes, 0.4)
             for box in boxes:
                 cls_id = box[6]
-                if(cls_id == 0):   # if person
+                if cls_id == 0:   # if person
                     if box[4].item() < 0.4: # if the threshold for detecting a person is met
                         patch_results = patch_results + 1
 
@@ -146,12 +145,12 @@ if __name__ == '__main__':
             boxes = nms(boxes, 0.4)
             for box in boxes:
                 cls_id = box[6]
-                if(cls_id == 0):   # if person
-                    if box[4].item() < 0.4: # If the
+                if cls_id == 0:   # if person
+                    if box[4].item() < 0.4: # If the threshold for detecting a person is met
                         noise_results = noise_results + 1
 
-	print("clean_results: " + clean_results/clean_results)
-	print("noise_results: " + noise_results/clean_results)
-	print("patch_results: " + patch_results/clean_results)
+    print("clean_results: " + clean_results)
+    print("noise_results: " + noise_results)
+    print("patch_results: " + patch_results)
             
 
