@@ -87,6 +87,8 @@ if __name__ == '__main__':
             """ at this point, clean images are prepped to be analyzed by yolo """
 
             # generate a label file for the padded image
+            # Changed the third parameter in the following line to be 0.01 instead of 0.4 in order to 
+            # figure out why the number of outputs for clean results is so different from other results
             boxes = do_detect(darknet_model, padded_img, 0.01, 0.4, True) # run yolo object detection on image
             boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes
             textfile = open(txtpath,'w+')
