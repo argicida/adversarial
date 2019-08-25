@@ -1,4 +1,4 @@
-# Author: Nate Glod
+# Author: Nate Glod, Perry Deng
 # Filename: analyze_json.py
 # Script to intepret the json results for test_patch.py.
 import pandas as pd
