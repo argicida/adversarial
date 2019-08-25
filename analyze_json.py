@@ -1,13 +1,13 @@
 # Author: Nate Glod
 # Filename: analyze_json.py
-# Script to intepret the json results for test_patch.py. Automatically tests all the
+# Script to intepret the json results for test_patch.py.
 import pandas as pd
 
 
 def interpret_results(filename):
     df = pd.read_json(filename)
     total_count = df.count().values[0]
-    df = df.drop(df[df.score < 0.4].index)
+    df = df[df.score > 0.4]
     success_count = df.count().values[0]
     success_rate = success_count/total_count
     print("Success Rate for " + filename + ": " + str(success_rate))
@@ -16,8 +16,8 @@ def interpret_results(filename):
 def main():
     '''
     The 'score' category in the json measures object score, how likely the algorithm this there is an object where the
-    person is in the picture. The threshold for saying there is an object where the person is supposed to be is
-    0.4, and this script prints the fraction of images which have an object score above 0.4 for each approach
+    person is in the picture. The threshold used by the researchers is 0.4, so the number outputted is the ratio of
+    pictures which evade detection to total pictures
     :return:
     '''
     # No patch, no noise, just a clean picture
