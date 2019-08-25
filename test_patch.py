@@ -20,7 +20,7 @@ if __name__ == '__main__':
     cfgfile = "cfg/yolov2.cfg"
     weightfile = "weights/yolov2.weights"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
-    patchfile = "saved_patches/eric_reliability_demo.jpg"
+    patchfile = "saved_patches/patch7.jpg"
     #patchfile = "/home/wvr/Pictures/individualImage_upper_body.png"
     #patchfile = "/home/wvr/Pictures/class_only.png"
     #patchfile = "/home/wvr/Pictures/class_transfer.png"

@@ -4,28 +4,22 @@
 import pandas as pd
 
 
-def interpret_results(filename):
-    df = pd.read_json(filename)
-    total_count = df.count().values[0]
-    df = df[df.score > 0.4]
-    success_count = df.count().values[0]
-    success_rate = success_count/total_count
-    print("Success Rate for " + filename + ": " + str(success_rate))
+def interpret_results():
+    # number of total detected boxes from clean photos
+    total_positives = pd.read_json('clean_results.json').count()[0]
+    # number of detected boxes from photos with randomly generated patches
+    r_patch_positives = pd.read_json('noise_results.json').count()[0]
+    # number of detected boxes from photos with adversarial patches
+    patch_positives = pd.read_json('patch_results.json').count()[0]
+
+    # if patched images have false positives, then this recall rate is an upperbound
+    print('clean image recall rate: 1 by definition')
+    print('randomly patched recall rate: %f' % (r_patch_positives/total_positives))
+    print('generated patched recall rate: %f' % (patch_positives/total_positives))
 
 
 def main():
-    '''
-    The 'score' category in the json measures object score, how likely the algorithm this there is an object where the
-    person is in the picture. The threshold used by the researchers is 0.4, so the number outputted is the ratio of
-    pictures which evade detection to total pictures
-    :return:
-    '''
-    # No patch, no noise, just a clean picture
-    interpret_results("clean_results.json")
-    # Results with a randomized noise patch
-    interpret_results("noise_results.json")
-    # Results with a trained patch
-    interpret_results("patch_results.json")
+    interpret_results()
 
 
 if __name__ == '__main__':
