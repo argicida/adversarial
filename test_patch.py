@@ -20,7 +20,7 @@ if __name__ == '__main__':
     cfgfile = "cfg/yolov2.cfg"
     weightfile = "weights/yolov2.weights"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
-    patchfile = "saved_patches/patch11.jpg"
+    patchfile = "saved_patches/eric_reliability_demo.jpg"
     #patchfile = "/home/wvr/Pictures/individualImage_upper_body.png"
     #patchfile = "/home/wvr/Pictures/class_only.png"
     #patchfile = "/home/wvr/Pictures/class_transfer.png"
@@ -52,8 +52,10 @@ if __name__ == '__main__':
     patch_results = []
     
     print("Done")
+    total = 0
     # Walk over clean images
     for imgfile in os.listdir(imgdir):
+        total += 1
         print("new image")
         if imgfile.endswith('.jpg') or imgfile.endswith('.png'):
             name = os.path.splitext(imgfile)[0]    # image name w/o extension
@@ -87,9 +89,7 @@ if __name__ == '__main__':
             """ at this point, clean images are prepped to be analyzed by yolo """
 
             # generate a label file for the padded image
-            # Changed the third parameter in the following line to be 0.01 instead of 0.4 in order to 
-            # figure out why the number of outputs for clean results is so different from other results
-            boxes = do_detect(darknet_model, padded_img, 0.01, 0.4, True) # run yolo object detection on image
+            boxes = do_detect(darknet_model, padded_img, 0.5, 0.4, True) # run yolo object detection on image
             boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes
             textfile = open(txtpath,'w+')
             for box in boxes:
@@ -138,7 +138,7 @@ if __name__ == '__main__':
             # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'proper_patched/', 'yolo-labels/', txtname))
-            boxes = do_detect(darknet_model, p_img_pil, 0.01, 0.4, True)
+            boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             boxes = nms(boxes, 0.4)
             textfile = open(txtpath,'w+')
             for box in boxes:
@@ -164,7 +164,7 @@ if __name__ == '__main__':
             # generate a label file for the random patch image
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'random_patched/', 'yolo-labels/', txtname))
-            boxes = do_detect(darknet_model, p_img_pil, 0.01, 0.4, True)
+            boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             boxes = nms(boxes, 0.4)
             textfile = open(txtpath,'w+')
             for box in boxes:
@@ -177,7 +177,7 @@ if __name__ == '__main__':
                     textfile.write(f'{cls_id} {x_center} {y_center} {width} {height}\n')
                     noise_results.append({'image_id': name, 'bbox': [x_center.item() - width.item() / 2, y_center.item() - height.item() / 2, width.item(), height.item()], 'score': box[4].item(), 'category_id': 1})
             textfile.close()
-
+    print(total)
     with open('clean_results.json', 'w') as fp:
         json.dump(clean_results, fp)
     with open('noise_results.json', 'w') as fp:
