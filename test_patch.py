@@ -14,6 +14,24 @@ from load_data import PatchTransformer, PatchApplier, InriaDataset
 import json
 
 
+def test_results(image, textpath):
+    boxes = do_detect(darknet_model, image, 0.5, 0.4, True)
+    boxes = nms(boxes, 0.4)
+    textfile = open(textpath, 'w+')
+    for box in boxes:
+        cls_id = box[6]
+        if (cls_id == 0):  # if person
+            x_center = box[0]
+            y_center = box[1]
+            width = box[2]
+            height = box[3]
+            textfile.write(f'{cls_id} {x_center} {y_center} {width} {height}\n')
+            noise_results.append({'image_id': name,
+                                  'bbox': [x_center.item() - width.item() / 2, y_center.item() - height.item() / 2,
+                                           width.item(), height.item()], 'score': box[4].item(), 'category_id': 1})
+    textfile.close()
+
+
 if __name__ == '__main__':
     print("Setting everything up")
     imgdir = "inria/Test/pos"
@@ -21,9 +39,9 @@ if __name__ == '__main__':
     weightfile = "weights/yolov2.weights"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
     patchfile = "saved_patches/perry_08-26_500_epochs.jpg"
-    #patchfile = "/home/wvr/Pictures/individualImage_upper_body.png"
-    #patchfile = "/home/wvr/Pictures/class_only.png"
-    #patchfile = "/home/wvr/Pictures/class_transfer.png"
+    # patchfile = "/home/wvr/Pictures/individualImage_upper_body.png"
+    # patchfile = "/home/wvr/Pictures/class_only.png"
+    # patchfile = "/home/wvr/Pictures/class_transfer.png"
     savedir = "testing"
 
     darknet_model = Darknet(cfgfile)
@@ -73,21 +91,23 @@ if __name__ == '__main__':
                 dim_to_pad = 1 if w<h else 2
                 if dim_to_pad == 1:
                     padding = (h - w) / 2
-                    padded_img = Image.new('RGB', (h,h), color=(127,127,127))
+                    padded_img = Image.new('RGB', (h,h), color=(127, 127, 127))
                     padded_img.paste(img, (int(padding), 0))
                 else:
                     padding = (w - h) / 2
-                    padded_img = Image.new('RGB', (w, w), color=(127,127,127))
+                    padded_img = Image.new('RGB', (w, w), color=(127, 127, 127))
                     padded_img.paste(img, (0, int(padding)))
             # resize image to fit into yolo neural net
-            resize = transforms.Resize((img_size,img_size))
+            resize = transforms.Resize((img_size, img_size))
             padded_img = resize(padded_img)
             cleanname = name + ".png"
             # save this image
-            padded_img.save(os.path.join(savedir, 'clean/', cleanname))
+            # padded_img.save(os.path.join(savedir, 'clean/', cleanname))
 
             """ at this point, clean images are prepped to be analyzed by yolo """
 
+            test_results(padded_img, txtpath)
+            '''
             # generate a label file for the padded image
             boxes = do_detect(darknet_model, padded_img, 0.5, 0.4, True) # run yolo object detection on image
             boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes
@@ -108,6 +128,7 @@ if __name__ == '__main__':
                                           'score': box[4].item(),
                                           'category_id': 1})
             textfile.close()
+            '''
 
             """ At this point, image recognition has been ran, and humans detected in images have been tracked"""
 
@@ -133,11 +154,13 @@ if __name__ == '__main__':
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
             properpatchedname = name + "_p.png"
-            p_img_pil.save(os.path.join(savedir, 'proper_patched/', properpatchedname))
+            # p_img_pil.save(os.path.join(savedir, 'proper_patched/', properpatchedname))
             
             # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'proper_patched/', 'yolo-labels/', txtname))
+            test_results(p_img_pil, txtpath)
+            '''
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             boxes = nms(boxes, 0.4)
             textfile = open(txtpath,'w+')
@@ -151,6 +174,7 @@ if __name__ == '__main__':
                     textfile.write(f'{cls_id} {x_center} {y_center} {width} {height}\n')
                     patch_results.append({'image_id': name, 'bbox': [x_center.item() - width.item() / 2, y_center.item() - height.item() / 2, width.item(), height.item()], 'score': box[4].item(), 'category_id': 1})
             textfile.close()
+            '''
 
             # make a random patch, transform it and add it to the image
             random_patch = torch.rand(adv_patch_cpu.size()).cuda()
@@ -159,11 +183,13 @@ if __name__ == '__main__':
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
             properpatchedname = name + "_rdp.png"
-            p_img_pil.save(os.path.join(savedir, 'random_patched/', properpatchedname))
+            # p_img_pil.save(os.path.join(savedir, 'random_patched/', properpatchedname))
             
             # generate a label file for the random patch image
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'random_patched/', 'yolo-labels/', txtname))
+            test_results(p_img_pil,txtpath)
+            '''
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             boxes = nms(boxes, 0.4)
             textfile = open(txtpath,'w+')
@@ -177,6 +203,7 @@ if __name__ == '__main__':
                     textfile.write(f'{cls_id} {x_center} {y_center} {width} {height}\n')
                     noise_results.append({'image_id': name, 'bbox': [x_center.item() - width.item() / 2, y_center.item() - height.item() / 2, width.item(), height.item()], 'score': box[4].item(), 'category_id': 1})
             textfile.close()
+            '''
     print(total)
     with open('clean_results.json', 'w') as fp:
         json.dump(clean_results, fp)
