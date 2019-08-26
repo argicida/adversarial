@@ -31,6 +31,7 @@
 # alternatively, we have access to the "onboard" partition
 # -n 4 requests 4 CPUs
 # --gres=gpu:rtx600:1 requests 1 Nvidia rtx6000 GPU (which gives us 24 gig of VRAM)
+# SBATCH -A blackbox -p onboard -n 4 --gres=gpu:v100:1
 #SBATCH -A blackbox -p interactive -n 4 --gres=gpu:rtx6000:1
 
 
