@@ -13,9 +13,9 @@ def interpret_results():
     patch_positives = pd.read_json('patch_results.json').count()[0]
 
     # if patched images have false positives, then this recall rate is an upperbound
-    print('clean image recall rate: 1 by definition')
-    print('randomly patched recall rate: %f' % (r_patch_positives/total_positives))
-    print('generated patched recall rate: %f' % (patch_positives/total_positives))
+    print('no patch recall rate: 1 by definition')
+    print('random patch upper bound recall rate: %f' % (r_patch_positives/total_positives))
+    print('generated patch upper bound recall rate: %f' % (patch_positives/total_positives))
 
 
 def main():
