@@ -99,6 +99,7 @@ class PatchTrainer(object):
             # I have no fucking clue how long this is supposed to be running, probably for the epoch length? Needs
             # More research
             # TODO: note from Perry: yes this enumerates through some sort of file iterator for number of epochs
+            #         the tqdm shit is just for progress bar, except for the total argument
             for i_batch, (img_batch, lab_batch) in tqdm(enumerate(train_loader), desc=f'Running epoch {epoch}',
                                                         total=self.epoch_length):
                 with autograd.detect_anomaly():
