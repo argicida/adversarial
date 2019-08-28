@@ -15,9 +15,13 @@ import json
 
 
 def test_results(image, textpath):
+    box_count = 0
     boxes = do_detect(darknet_model, image, 0.5, 0.4, True)
     boxes = nms(boxes, 0.4)
-    return len(boxes)
+    for box in boxes:
+        if box[6] == 0:
+            box_count = box_count + 1
+    return box_count
 
 
 if __name__ == '__main__':
@@ -204,9 +208,9 @@ if __name__ == '__main__':
         
     '''
     results = open('test_results.txt', 'w+')
-    results.write('no patch recall rate: 1 by definition')
-    results.write(f'Noise recall rates: {noise_number/clean_number}')
-    results.write(f'Patch recall rates: {patch_number/clean_number}')
+    results.write('no patch recall rate: 1 by definition\n')
+    results.write(f'Noise recall rates: {noise_number/clean_number}\n')
+    results.write(f'Patch recall rates: {patch_number/clean_number}\n')
     results.close()
 
 
