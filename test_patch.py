@@ -17,19 +17,7 @@ import json
 def test_results(image, textpath):
     boxes = do_detect(darknet_model, image, 0.5, 0.4, True)
     boxes = nms(boxes, 0.4)
-    textfile = open(textpath, 'w+')
-    for box in boxes:
-        cls_id = box[6]
-        if (cls_id == 0):  # if person
-            x_center = box[0]
-            y_center = box[1]
-            width = box[2]
-            height = box[3]
-            textfile.write(f'{cls_id} {x_center} {y_center} {width} {height}\n')
-            noise_results.append({'image_id': name,
-                                  'bbox': [x_center.item() - width.item() / 2, y_center.item() - height.item() / 2,
-                                           width.item(), height.item()], 'score': box[4].item(), 'category_id': 1})
-    textfile.close()
+    return len(boxes)
 
 
 if __name__ == '__main__':
@@ -65,9 +53,12 @@ if __name__ == '__main__':
     adv_patch_cpu = tf(patch_img)
     adv_patch = adv_patch_cpu.cuda()
 
-    clean_results = []
-    noise_results = []
-    patch_results = []
+    # clean_results = []
+    clean_number = 0
+    # noise_results = []
+    noise_number = 0
+    # patch_results = []
+    patch_number = 0
     
     print("Done")
     total = 0
@@ -106,7 +97,7 @@ if __name__ == '__main__':
 
             """ at this point, clean images are prepped to be analyzed by yolo """
 
-            test_results(padded_img, txtpath)
+            clean_number = clean_number + test_results(padded_img, txtpath)
             '''
             # generate a label file for the padded image
             boxes = do_detect(darknet_model, padded_img, 0.5, 0.4, True) # run yolo object detection on image
@@ -159,7 +150,7 @@ if __name__ == '__main__':
             # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'proper_patched/', 'yolo-labels/', txtname))
-            test_results(p_img_pil, txtpath)
+            patch_number = patch_number + test_results(p_img_pil, txtpath)
             '''
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             boxes = nms(boxes, 0.4)
@@ -188,7 +179,7 @@ if __name__ == '__main__':
             # generate a label file for the random patch image
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'random_patched/', 'yolo-labels/', txtname))
-            test_results(p_img_pil,txtpath)
+            noise_number = noise_number + test_results(p_img_pil, txtpath)
             '''
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             boxes = nms(boxes, 0.4)
@@ -203,7 +194,6 @@ if __name__ == '__main__':
                     textfile.write(f'{cls_id} {x_center} {y_center} {width} {height}\n')
                     noise_results.append({'image_id': name, 'bbox': [x_center.item() - width.item() / 2, y_center.item() - height.item() / 2, width.item(), height.item()], 'score': box[4].item(), 'category_id': 1})
             textfile.close()
-            '''
     print(total)
     with open('clean_results.json', 'w') as fp:
         json.dump(clean_results, fp)
@@ -211,5 +201,12 @@ if __name__ == '__main__':
         json.dump(noise_results, fp)
     with open('patch_results.json', 'w') as fp:
         json.dump(patch_results, fp)
-            
+        
+    '''
+    results = open('test_results.txt', 'w+')
+    results.write('no patch recall rate: 1 by definition')
+    results.write(f'Noise recall rates: {noise_number/clean_number}')
+    results.write(f'Patch recall rates: {patch_number/clean_number}')
+    results.close()
+
 
