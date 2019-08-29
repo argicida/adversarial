@@ -57,7 +57,7 @@ class PatchTrainer(object):
         # Initialize some settings
         img_size = self.darknet_model.height
         batch_size = self.config.batch_size
-        n_epochs = 2000
+        n_epochs = 1
         max_lab = 14
 
         time_str = time.strftime("%Y%m%d-%H%M%S")
@@ -101,7 +101,7 @@ class PatchTrainer(object):
             for i_batch, (img_batch, lab_batch) in tqdm(enumerate(train_loader), desc=f'Running epoch {epoch}',
                                                         total=self.epoch_length):
                 with autograd.detect_anomaly():
-
+                    print(img_batch.size())
                     # Optimizes everything to run on GPUs
                     img_batch = img_batch.cuda()
                     lab_batch = lab_batch.cuda()

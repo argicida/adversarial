@@ -49,5 +49,5 @@
 # spack list for all available packages
 # spack info for more information on a particular package
 source ./venv/bin/activate
-python train_patch.py paper_obj
+python test_video.py
 deactivate
