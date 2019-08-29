@@ -19,10 +19,6 @@ from darknet import Darknet
 
 from median_pool import MedianPool2d
 
-print('starting test read')
-im = Image.open('data/horse.jpg').convert('RGB')
-print('img read!')
-
 
 class MaxProbExtractor(nn.Module):
     """MaxProbExtractor: extracts max class probability for class from YOLO output.

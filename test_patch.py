@@ -14,17 +14,34 @@ from load_data import PatchTransformer, PatchApplier, InriaDataset
 import json
 
 
+def test_results(image, textpath):
+    box_count = 0
+    boxes = do_detect(darknet_model, image, 0.5, 0.4, True)
+    boxes = nms(boxes, 0.4)
+    for box in boxes:
+        if box[6] == 0:
+            box_count = box_count + 1
+    return box_count
+
+
 if __name__ == '__main__':
     print("Setting everything up")
     imgdir = "inria/Test/pos"
     cfgfile = "cfg/yolov2.cfg"
     weightfile = "weights/yolov2.weights"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
+<<<<<<< HEAD
     #patchfile = "saved_patches/perry_08-26_500_epochs.jpg"
     patchfile = "patches/object_upper.png"
     #patchfile = "/home/wvr/Pictures/individualImage_upper_body.png"
     #patchfile = "/home/wvr/Pictures/class_only.png"
     #patchfile = "/home/wvr/Pictures/class_transfer.png"
+=======
+    patchfile = "saved_patches/perry_08-26_500_epochs.jpg"
+    # patchfile = "/home/wvr/Pictures/individualImage_upper_body.png"
+    # patchfile = "/home/wvr/Pictures/class_only.png"
+    # patchfile = "/home/wvr/Pictures/class_transfer.png"
+>>>>>>> ad671f42f4da820af23d12fe92735376fa5768b7
     savedir = "testing"
 
     darknet_model = Darknet(cfgfile)
@@ -48,9 +65,12 @@ if __name__ == '__main__':
     adv_patch_cpu = tf(patch_img)
     adv_patch = adv_patch_cpu.cuda()
 
-    clean_results = []
-    noise_results = []
-    patch_results = []
+    # clean_results = []
+    clean_number = 0
+    # noise_results = []
+    noise_number = 0
+    # patch_results = []
+    patch_number = 0
     
     print("Done")
     total = 0
@@ -74,21 +94,23 @@ if __name__ == '__main__':
                 dim_to_pad = 1 if w<h else 2
                 if dim_to_pad == 1:
                     padding = (h - w) / 2
-                    padded_img = Image.new('RGB', (h,h), color=(127,127,127))
+                    padded_img = Image.new('RGB', (h,h), color=(127, 127, 127))
                     padded_img.paste(img, (int(padding), 0))
                 else:
                     padding = (w - h) / 2
-                    padded_img = Image.new('RGB', (w, w), color=(127,127,127))
+                    padded_img = Image.new('RGB', (w, w), color=(127, 127, 127))
                     padded_img.paste(img, (0, int(padding)))
             # resize image to fit into yolo neural net
-            resize = transforms.Resize((img_size,img_size))
+            resize = transforms.Resize((img_size, img_size))
             padded_img = resize(padded_img)
             cleanname = name + ".png"
             # save this image
-            padded_img.save(os.path.join(savedir, 'clean/', cleanname))
+            # padded_img.save(os.path.join(savedir, 'clean/', cleanname))
 
             """ at this point, clean images are prepped to be analyzed by yolo """
 
+            clean_number = clean_number + test_results(padded_img, txtpath)
+            '''
             # generate a label file for the padded image
             boxes = do_detect(darknet_model, padded_img, 0.5, 0.4, True) # run yolo object detection on image
             boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes
@@ -109,6 +131,7 @@ if __name__ == '__main__':
                                           'score': box[4].item(),
                                           'category_id': 1})
             textfile.close()
+            '''
 
             """ At this point, image recognition has been ran, and humans detected in images have been tracked"""
 
@@ -134,11 +157,13 @@ if __name__ == '__main__':
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
             properpatchedname = name + "_p.png"
-            p_img_pil.save(os.path.join(savedir, 'proper_patched/', properpatchedname))
+            # p_img_pil.save(os.path.join(savedir, 'proper_patched/', properpatchedname))
             
             # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'proper_patched/', 'yolo-labels/', txtname))
+            patch_number = patch_number + test_results(p_img_pil, txtpath)
+            '''
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             boxes = nms(boxes, 0.4)
             textfile = open(txtpath,'w+')
@@ -152,6 +177,7 @@ if __name__ == '__main__':
                     textfile.write(f'{cls_id} {x_center} {y_center} {width} {height}\n')
                     patch_results.append({'image_id': name, 'bbox': [x_center.item() - width.item() / 2, y_center.item() - height.item() / 2, width.item(), height.item()], 'score': box[4].item(), 'category_id': 1})
             textfile.close()
+            '''
 
             # make a random patch, transform it and add it to the image
             random_patch = torch.rand(adv_patch_cpu.size()).cuda()
@@ -160,11 +186,13 @@ if __name__ == '__main__':
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
             properpatchedname = name + "_rdp.png"
-            p_img_pil.save(os.path.join(savedir, 'random_patched/', properpatchedname))
+            # p_img_pil.save(os.path.join(savedir, 'random_patched/', properpatchedname))
             
             # generate a label file for the random patch image
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'random_patched/', 'yolo-labels/', txtname))
+            noise_number = noise_number + test_results(p_img_pil, txtpath)
+            '''
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             boxes = nms(boxes, 0.4)
             textfile = open(txtpath,'w+')
@@ -185,5 +213,12 @@ if __name__ == '__main__':
         json.dump(noise_results, fp)
     with open('patch_results.json', 'w') as fp:
         json.dump(patch_results, fp)
-            
+        
+    '''
+    results = open('test_results.txt', 'w+')
+    results.write('no patch recall rate: 1 by definition\n')
+    results.write(f'Noise recall rates: {noise_number/clean_number}\n')
+    results.write(f'Patch recall rates: {patch_number/clean_number}\n')
+    results.close()
+
 

@@ -98,10 +98,13 @@ class PatchTrainer(object):
 
             # I have no fucking clue how long this is supposed to be running, probably for the epoch length? Needs
             # More research
+            # TODO: note from Perry: yes this enumerates through some sort of file iterator for number of epochs
+            #         the tqdm shit is just for progress bar, except for the total argument
             for i_batch, (img_batch, lab_batch) in tqdm(enumerate(train_loader), desc=f'Running epoch {epoch}',
                                                         total=self.epoch_length):
                 with autograd.detect_anomaly():
-                    print(img_batch.size())
+                    #print(img_batch.size())
+                    #print(img_batch.type())
                     # Optimizes everything to run on GPUs
                     img_batch = img_batch.cuda()
                     lab_batch = lab_batch.cuda()
@@ -115,13 +118,15 @@ class PatchTrainer(object):
 
                     # Can't find this object anywhere else, most likely allows the patch to be put into inputted photos
                     # TODO: find documentation for this object
+                    # TODO: note from Perry: which object? patch_applier is from this file, F is torch.nn.functional
                     p_img_batch = self.patch_applier(img_batch, adv_batch_t)
                     p_img_batch = F.interpolate(p_img_batch, (self.darknet_model.height, self.darknet_model.width))
 
 
                     # TODO: Figure out exactly what these transforms are doing
-                    img = p_img_batch[1, :, :,]
-                    img = transforms.ToPILImage()(img.detach().cpu())
+                    # TODO: note from Perry: these two lines seem to only be used for debugging purposes, commenting them out
+                    #img = p_img_batch[1, :, :,]
+                    #img = transforms.ToPILImage()(img.detach().cpu())
                     # img.show()
 
                     # Looks to be where the given patch is evaluated, however all these objects are not included within
