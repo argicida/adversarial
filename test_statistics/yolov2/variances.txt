@@ -1,5 +1,6 @@
 >>> import pandas as pd
->>> stats = pd.read_csv('test_results.csv')
+>>> import numpy as np
+>>> stats = pd.read_csv('perry_08-26_500_epochs_statistics.csv')
 >>> stats.count()
 noise_object_positive_ratio    200
 noise_human_positive_ratio     200
@@ -7,7 +8,6 @@ patch_object_positive_ratio    200
 patch_human_positive_ratio     200
 dtype: int64
 >>> small = stats.sample(100)
->>> import numpy as np
 >>> np.var(small['noise_object_positive_ratio'].values)
 4.679717445893756e-05
 >>> np.var(stats['noise_object_positive_ratio'].values)

@@ -1,0 +1,12 @@
+>>> import pandas as pd
+>>> from scipy.stats import kurtosis
+>>> stats = pd.read_csv('perry_08-26_500_epochs_statistics.csv')
+>>> kurtosis(stats['noise_human_positive_ratio'].values)
+0.06015902911499227
+>>> kurtosis(stats['patch_human_positive_ratio'].values)
+0.18911066686786615
+>>> kurtosis(stats['noise_object_positive_ratio'].values)
+0.7641600202304852
+>>> kurtosis(stats['patch_object_positive_ratio'].values)
+-0.09132942229006025
+
