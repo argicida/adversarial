@@ -121,3 +121,4 @@ ENV/
 # For mac
 .DS_Store
 
+.Rproj.user
