@@ -218,11 +218,10 @@ if __name__ == '__main__':
     '''
     print("Done")
     results = open('test_results.txt', 'w+')
-    results.write('no patch positive rate: 1 by definition\n')
-    results.write(f'noise human positive ratio: {noise_human_positives / clean_human_positives}\n')
-    results.write(f'patch human positive ratio: {patch_human_positives / clean_human_positives}\n')
-    results.write(f'noise object positive ratio: {noise_object_positives / clean_object_positives}\n')
-    results.write(f'patch object positive ratio: {patch_object_positives / clean_object_positives}\n')
+    results.write(f'noise to clean human positive ratio: {noise_human_positives / clean_human_positives}\n')
+    results.write(f'patch to clean human positive ratio: {patch_human_positives / clean_human_positives}\n')
+    results.write(f'noise to clean object positive ratio: {noise_object_positives / clean_object_positives}\n')
+    results.write(f'patch to clean object positive ratio: {patch_object_positives / clean_object_positives}\n')
     results.close()
     stats = open('test_results.csv', 'a+')
     stats.write(f'{noise_object_positives / clean_object_positives},{noise_human_positives / clean_human_positives},'
