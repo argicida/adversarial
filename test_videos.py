@@ -1,10 +1,8 @@
 import os
-import numpy as np
 
 from nvidia.dali.pipeline import Pipeline
 from nvidia.dali.plugin.pytorch import DALIGenericIterator
 import nvidia.dali.ops as ops
-import nvidia.dali.types as types
 import torch
 
 
@@ -61,6 +59,7 @@ def main():
   video_directory = "test_videos/"  
   loader_iterable = TorchVideoFramesLoaderIterable(8, video_directory, nchw=True)
   # iterate through all the frames of all the videos in the directory in batch through pytorch tensors
+  final_dim = (603, 603)
   for out in loader_iterable:
     batch = torch.squeeze(out[0]['data']).type(torch.float32)
     normalized_batch = torch.div(batch, 255)
@@ -68,6 +67,9 @@ def main():
     square_batch = padded_square_tensor(normalized_batch)
     del normalized_batch
     print(square_batch.size())
+    resized_batch = torch.nn.functional.interpolate(square_batch, size=final_dim, mode='bilinear')
+    del square_batch
+    print(resized_batch.size())
     # still need resampling to resize tensor into the right dimension
     # considering torch.nn.functional.interpolate()
 
