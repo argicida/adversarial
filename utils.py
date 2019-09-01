@@ -120,7 +120,7 @@ def get_region_boxes(output, conf_thresh, num_classes, anchors, num_anchors, onl
     h = output.size(2)
     w = output.size(3)
 
-    t0 = time.time()
+    # t0 = time.time()
     all_boxes = []
     #print(output.size())
     output = output.view(batch*num_anchors, 5+num_classes, h*w)
@@ -144,11 +144,11 @@ def get_region_boxes(output, conf_thresh, num_classes, anchors, num_anchors, onl
     det_confs = torch.sigmoid(output[4])
 
     cls_confs = torch.nn.Softmax()(Variable(output[5:5+num_classes].transpose(0,1))).data
-    print(cls_confs.size())
+    # print(cls_confs.size())
     cls_max_confs, cls_max_ids = torch.max(cls_confs, 1)
     cls_max_confs = cls_max_confs.view(-1)
     cls_max_ids = cls_max_ids.view(-1)
-    t1 = time.time()
+    # t1 = time.time()
     
     sz_hw = h*w
     sz_hwa = sz_hw*num_anchors
@@ -161,7 +161,7 @@ def get_region_boxes(output, conf_thresh, num_classes, anchors, num_anchors, onl
     hs = convert2cpu(hs)
     if validation:
         cls_confs = convert2cpu(cls_confs.view(-1, num_classes))
-    t2 = time.time()
+    # t2 = time.time()
     for b in range(batch):
         boxes = []
         for cy in range(h):
@@ -190,13 +190,12 @@ def get_region_boxes(output, conf_thresh, num_classes, anchors, num_anchors, onl
                                     box.append(c)
                         boxes.append(box)
         all_boxes.append(boxes)
-    t3 = time.time()
-    if False:
-        print('---------------------------------')
-        print('matrix computation : %f' % (t1-t0))
-        print('        gpu to cpu : %f' % (t2-t1))
-        print('      boxes filter : %f' % (t3-t2))
-        print('---------------------------------')
+    # t3 = time.time()
+    # print('---------------------------------')
+    # print('matrix computation : %f' % (t1-t0))
+    # print('        gpu to cpu : %f' % (t2-t1))
+    # print('      boxes filter : %f' % (t3-t2))
+    # print('---------------------------------')
     return all_boxes
 
 def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
@@ -319,7 +318,7 @@ def image2torch(img):
 
 def do_detect(model, img, conf_thresh, nms_thresh, use_cuda=1):
     model.eval()
-    t0 = time.time()
+    # t0 = time.time()
 
     if isinstance(img, Image.Image):
         width = img.width
@@ -334,37 +333,36 @@ def do_detect(model, img, conf_thresh, nms_thresh, use_cuda=1):
         print("unknown image type")
         exit(-1)
 
-    t1 = time.time()
+    # t1 = time.time()
 
     if use_cuda:
         img = img.cuda()
     img = torch.autograd.Variable(img)
-    t2 = time.time()
+    # t2 = time.time()
 
     output = model.forward(img) #Simen: dit doet een forward, vervangen voor duidelijkheid
     #output = output.data
     #for j in range(100):
     #    sys.stdout.write('%f ' % (output.storage()[j]))
     #print('')
-    t3 = time.time()
+    # t3 = time.time()
 
     boxes = get_region_boxes(output, conf_thresh, model.num_classes, model.anchors, model.num_anchors)[0]
     #for j in range(len(boxes)):
         #print(boxes[j])
-    t4 = time.time()
+    # t4 = time.time()
 
     boxes = nms(boxes, nms_thresh)
-    t5 = time.time()
+    # t5 = time.time()
 
-    if False:
-        print('-----------------------------------')
-        print(' image to tensor : %f' % (t1 - t0))
-        print('  tensor to cuda : %f' % (t2 - t1))
-        print('         predict : %f' % (t3 - t2))
-        print('get_region_boxes : %f' % (t4 - t3))
-        print('             nms : %f' % (t5 - t4))
-        print('           total : %f' % (t5 - t0))
-        print('-----------------------------------')
+    # print('-----------------------------------')
+    # print(' image to tensor : %f' % (t1 - t0))
+    # print('  tensor to cuda : %f' % (t2 - t1))
+    # print('         predict : %f' % (t3 - t2))
+    # print('get_region_boxes : %f' % (t4 - t3))
+    # print('             nms : %f' % (t5 - t4))
+    # print('           total : %f' % (t5 - t0))
+    # print('-----------------------------------')
     return boxes
 
 def read_data_cfg(datacfg):

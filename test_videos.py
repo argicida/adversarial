@@ -5,6 +5,13 @@ from nvidia.dali.plugin.pytorch import DALIGenericIterator
 import nvidia.dali.ops as ops
 import torch
 
+import matplotlib.pyplot as plt
+
+from darknet import Darknet
+import utils
+
+from multiprocessing import Process, Queue
+
 
 class VideoPipe(Pipeline):
   def __init__(self, batch_size, sequence_length, initial_prefetch_size, nchw, num_threads, device_id, data, shuffle):
@@ -55,23 +62,79 @@ def padded_square_tensor(tensor):
     return tensor
 
 
+def view_first_image_in_nchw_batch(nchw_pytorch_tensor, title=None):
+  # incorrectly displays 9 clones of the first image rather than one big image, but shouldn't impact functionality
+  nhwc_batch = nchw_pytorch_tensor.view(nchw_pytorch_tensor.shape[0], nchw_pytorch_tensor.shape[2],
+                                        nchw_pytorch_tensor.shape[3], nchw_pytorch_tensor.shape[1]).cpu()
+  plt.imshow(nhwc_batch[0])
+  if title is not None:
+    plt.title(title)
+  plt.show()
+
+
+def nms_and_count_human_boxes(nms_threshold, input_queue:Queue, output_queue:Queue):
+  human_count = 0
+  while True:
+    item = input_queue.get()
+    if item == "SIGKILL":
+      break
+    boxes = utils.nms(item, nms_threshold)
+    for box in boxes:
+        if box[6] == 0: # yolov2 class person
+            human_count += 1
+  output_queue.put(human_count)
+
+
 def main():
+  cfgfile = "cfg/yolov2.cfg"
+  weightfile = "weights/yolov2.weights"
+  darknet_model = Darknet(cfgfile)
+  darknet_model.load_weights(weightfile)
+  darknet_model = darknet_model.eval().cuda()
+  detection_confidence_threshold = 0.5
+  nms_threshold = 0.4
+
+  batch_size = 4
   video_directory = "test_videos/"  
-  loader_iterable = TorchVideoFramesLoaderIterable(8, video_directory, nchw=True)
+  loader_iterable = TorchVideoFramesLoaderIterable(batch_size, video_directory, nchw=True)
   # iterate through all the frames of all the videos in the directory in batch through pytorch tensors
-  final_dim = (603, 603)
+  final_dim = (darknet_model.height, darknet_model.width)
+
+  human_count = 0
+  object_count = 0
+  num_frames = batch_size * len(loader_iterable)
+
   for out in loader_iterable:
-    batch = torch.squeeze(out[0]['data']).type(torch.float32)
-    normalized_batch = torch.div(batch, 255)
+    batch = torch.squeeze(out[0]['data']).cuda()
+    # view_first_image_in_nchw_batch(batch, "batch")
+    normalized_batch = torch.div(batch.type(torch.float32), 255).cuda()
+    # view_first_image_in_nchw_batch(normalized_batch, "normalized_batch")
     del batch
-    square_batch = padded_square_tensor(normalized_batch)
+    square_batch = padded_square_tensor(normalized_batch).cuda()
+    # view_first_image_in_nchw_batch(square_batch, "square_batch")
     del normalized_batch
-    print(square_batch.size())
-    resized_batch = torch.nn.functional.interpolate(square_batch, size=final_dim, mode='bilinear')
+    resized_batch = torch.nn.functional.interpolate(square_batch, size=final_dim, mode='bilinear').cuda()
+    # view_first_image_in_nchw_batch(resized_batch, "resized_batch")
     del square_batch
-    print(resized_batch.size())
-    # still need resampling to resize tensor into the right dimension
-    # considering torch.nn.functional.interpolate()
+    output = darknet_model.forward(resized_batch)
+    del resized_batch
+    batch_boxes = utils.get_region_boxes(output, detection_confidence_threshold,
+                                   darknet_model.num_classes, darknet_model.anchors, darknet_model.num_anchors)
+    for boxes in batch_boxes:
+      boxes = utils.nms(boxes, nms_threshold)
+      for box in boxes:
+        if box[6] == 0:
+          human_count += 1
+      object_count += len(boxes)
+    del batch_boxes
+  human_detections_per_frame = human_count / num_frames
+  object_detections_per_frame = object_count / num_frames
+  results = open('videos_results.txt', 'w+')
+  results.write(f'total number of frames: {num_frames}\n')
+  results.write(f'mean_human_detections_per_frame: {human_detections_per_frame}\n')
+  results.write(f'mean_object_detections_per_frame: {object_detections_per_frame}\n')
+  results.close()
+
 
 if __name__ == "__main__":
   main()

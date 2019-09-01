@@ -4,12 +4,12 @@ Training code for Adversarial patch training
 
 """
 
-import PIL
-import load_data
+# import PIL
+# import load_data
 from tqdm import tqdm
 
 from load_data import *
-import gc
+# import gc
 import matplotlib.pyplot as plt
 from torch import autograd
 from torchvision import transforms
@@ -19,7 +19,7 @@ import subprocess
 import patch_config
 import sys
 import time
-import datetime
+# import datetime
 
 
 class PatchTrainer(object):
@@ -103,8 +103,6 @@ class PatchTrainer(object):
             for i_batch, (img_batch, lab_batch) in tqdm(enumerate(train_loader), desc=f'Running epoch {epoch}',
                                                         total=self.epoch_length):
                 with autograd.detect_anomaly():
-                    #print(img_batch.size())
-                    #print(img_batch.type())
                     # Optimizes everything to run on GPUs
                     img_batch = img_batch.cuda()
                     lab_batch = lab_batch.cuda()

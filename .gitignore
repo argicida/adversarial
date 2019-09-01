@@ -7,8 +7,10 @@ slurm*.sh
 
 # videos
 test_videos/*
+videos_results.txt
 
 # patch testing output
+test_results.txt
 testing/*/*.png
 testing/*/*/*.txt
 clean_results.json

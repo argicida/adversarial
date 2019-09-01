@@ -14,10 +14,12 @@ from load_data import PatchTransformer, PatchApplier, InriaDataset
 import json
 
 
-def test_results(image, textpath):
+def test_results(image, darknet_model, textpath):
+    detection_confidence_threshold = 0.5
+    nms_threshold = 0.4
     box_count = 0
-    boxes = do_detect(darknet_model, image, 0.5, 0.4, True)
-    boxes = nms(boxes, 0.4)
+    boxes = do_detect(darknet_model, image, detection_confidence_threshold, nms_threshold, use_cuda=True)
+    #boxes = nms(boxes, nms_threshold)
     for box in boxes:
         if box[6] == 0:
             box_count = box_count + 1
@@ -25,7 +27,7 @@ def test_results(image, textpath):
 
 
 if __name__ == '__main__':
-    print("Setting everything up")
+    # print("Setting everything up")
     imgdir = "inria/Test/pos"
     cfgfile = "cfg/yolov2.cfg"
     weightfile = "weights/yolov2.weights"
@@ -64,7 +66,7 @@ if __name__ == '__main__':
     # patch_results = []
     patch_number = 0
     
-    print("Done")
+    # print("Done")
     total = 0
     # Walk over clean images
     for imgfile in os.listdir(imgdir):
@@ -101,11 +103,11 @@ if __name__ == '__main__':
 
             """ at this point, clean images are prepped to be analyzed by yolo """
 
-            clean_number = clean_number + test_results(padded_img, txtpath)
+            clean_number = clean_number + test_results(padded_img, darknet_model, txtpath)
             '''
             # generate a label file for the padded image
             boxes = do_detect(darknet_model, padded_img, 0.5, 0.4, True) # run yolo object detection on image
-            boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes
+            #boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes, already called in do_detect()
             textfile = open(txtpath,'w+')
             for box in boxes:
                 cls_id = box[6]
@@ -135,6 +137,8 @@ if __name__ == '__main__':
             label = torch.from_numpy(label).float()
             if label.dim() == 1:
                 # Eric: Unsure what purpose this unsqueeze serves
+                # Perry: it adds an extra dimension to work with batched/vectorized algorithms,
+                #   which are designed to take in multiple labels at once
                 label = label.unsqueeze(0)
 
             # Tensorify the image
@@ -154,10 +158,10 @@ if __name__ == '__main__':
             # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'proper_patched/', 'yolo-labels/', txtname))
-            patch_number = patch_number + test_results(p_img_pil, txtpath)
+            patch_number = patch_number + test_results(p_img_pil, darknet_model, txtpath)
             '''
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
-            boxes = nms(boxes, 0.4)
+            #boxes = nms(boxes, 0.4)
             textfile = open(txtpath,'w+')
             for box in boxes:
                 cls_id = box[6]
@@ -183,10 +187,10 @@ if __name__ == '__main__':
             # generate a label file for the random patch image
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'random_patched/', 'yolo-labels/', txtname))
-            noise_number = noise_number + test_results(p_img_pil, txtpath)
+            noise_number = noise_number + test_results(p_img_pil, darknet_model, txtpath)
             '''
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
-            boxes = nms(boxes, 0.4)
+            #boxes = nms(boxes, 0.4)
             textfile = open(txtpath,'w+')
             for box in boxes:
                 cls_id = box[6]
