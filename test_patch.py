@@ -14,16 +14,17 @@ from load_data import PatchTransformer, PatchApplier, InriaDataset
 import json
 
 
-def test_results(image, darknet_model, textpath):
+def test_results(image, darknet_model):
     detection_confidence_threshold = 0.5
     nms_threshold = 0.4
-    box_count = 0
+    human_box_count = 0
     boxes = do_detect(darknet_model, image, detection_confidence_threshold, nms_threshold, use_cuda=True)
     #boxes = nms(boxes, nms_threshold)
     for box in boxes:
         if box[6] == 0:
-            box_count = box_count + 1
-    return box_count
+            human_box_count = human_box_count + 1
+    total_box_count = len(boxes)
+    return human_box_count, total_box_count
 
 
 if __name__ == '__main__':
@@ -60,18 +61,17 @@ if __name__ == '__main__':
     adv_patch = adv_patch_cpu.cuda()
 
     # clean_results = []
-    clean_number = 0
+    clean_human_positives = 0
+    clean_object_positives = 0
     # noise_results = []
-    noise_number = 0
+    noise_human_positives = 0
+    noise_object_positives = 0
     # patch_results = []
-    patch_number = 0
-    
-    # print("Done")
-    total = 0
+    patch_human_positives = 0
+    patch_object_positives = 0
+
     # Walk over clean images
     for imgfile in os.listdir(imgdir):
-        total += 1
-        print("new image")
         if imgfile.endswith('.jpg') or imgfile.endswith('.png'):
             name = os.path.splitext(imgfile)[0]    # image name w/o extension
             txtname = name + '.txt'
@@ -102,8 +102,9 @@ if __name__ == '__main__':
             # padded_img.save(os.path.join(savedir, 'clean/', cleanname))
 
             """ at this point, clean images are prepped to be analyzed by yolo """
-
-            clean_number = clean_number + test_results(padded_img, darknet_model, txtpath)
+            human_positives, object_positives = test_results(padded_img, darknet_model)
+            clean_human_positives += human_positives
+            clean_object_positives += object_positives
             '''
             # generate a label file for the padded image
             boxes = do_detect(darknet_model, padded_img, 0.5, 0.4, True) # run yolo object detection on image
@@ -158,7 +159,9 @@ if __name__ == '__main__':
             # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'proper_patched/', 'yolo-labels/', txtname))
-            patch_number = patch_number + test_results(p_img_pil, darknet_model, txtpath)
+            human_positives, object_positives = test_results(p_img_pil, darknet_model)
+            patch_human_positives += human_positives
+            patch_object_positives += object_positives
             '''
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             #boxes = nms(boxes, 0.4)
@@ -187,7 +190,9 @@ if __name__ == '__main__':
             # generate a label file for the random patch image
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'random_patched/', 'yolo-labels/', txtname))
-            noise_number = noise_number + test_results(p_img_pil, darknet_model, txtpath)
+            human_positives, object_positives = test_results(p_img_pil, darknet_model)
+            noise_human_positives += human_positives
+            noise_object_positives += object_positives
             '''
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             #boxes = nms(boxes, 0.4)
@@ -211,10 +216,15 @@ if __name__ == '__main__':
         json.dump(patch_results, fp)
         
     '''
+    print("Done")
     results = open('test_results.txt', 'w+')
-    results.write('no patch recall rate: 1 by definition\n')
-    results.write(f'Noise recall rates: {noise_number/clean_number}\n')
-    results.write(f'Patch recall rates: {patch_number/clean_number}\n')
+    results.write('no patch positive rate: 1 by definition\n')
+    results.write(f'noise human positive ratio: {noise_human_positives / clean_human_positives}\n')
+    results.write(f'patch human positive ratio: {patch_human_positives / clean_human_positives}\n')
+    results.write(f'noise object positive ratio: {noise_object_positives / clean_object_positives}\n')
+    results.write(f'patch object positive ratio: {patch_object_positives / clean_object_positives}\n')
     results.close()
-
-
+    stats = open('test_results.csv', 'a+')
+    stats.write(f'{noise_object_positives / clean_object_positives},{noise_human_positives / clean_human_positives},'
+                f'{patch_object_positives / clean_object_positives},{patch_human_positives / clean_human_positives}\n')
+    stats.close()
