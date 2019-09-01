@@ -16,7 +16,7 @@
 
 # To send emails, set the adcdress below and remove one of the "#" signs.
 # IMPORTANT : GIVES GPU FAILURE NOTIFICATIONS
-#SBATCH --mail-user nxg8159@rit.edu
+#SBATCH --mail-user xxd9704@rit.edu
 # notify on state change: BEGIN, END, FAIL or ALL
 #SBATCH --mail-type=ALL
 
@@ -31,7 +31,8 @@
 # alternatively, we have access to the "onboard" partition
 # -n 4 requests 4 CPUs
 # --gres=gpu:v100:1 requests 1 Nvidia rtx6000 GPU (which gives us 24 gig of VRAM)
-#SBATCH -A blackbox -p onboard -n 4 --gres=gpu:v100:1
+# SBATCH -A blackbox -p onboard -n 4 --gres=gpu:v100:1
+#SBATCH -A blackbox -p interactive -n 4 --gres=gpu:rtx6000:1
 
 
 # Job memory requirements in MB
