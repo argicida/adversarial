@@ -8,7 +8,6 @@ slurm*.sh
 # videos
 test_videos/*
 videos_results.txt
-test_videos.py
 
 # patch testing output
 test_results.txt
