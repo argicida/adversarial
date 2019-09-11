@@ -33,7 +33,7 @@ if __name__ == '__main__':
     cfgfile = "cfg/yolov2.cfg"
     weightfile = "weights/yolov2.weights"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
-    patchfile = "saved_patches/perry_08-26_500_epochs.jpg"
+    patchfile = "saved_patches/perry_09-10_500_epochs.jpg"
     # patchfile = "/home/wvr/Pictures/individualImage_upper_body.png"
     # patchfile = "/home/wvr/Pictures/class_only.png"
     # patchfile = "/home/wvr/Pictures/class_transfer.png"
@@ -223,7 +223,7 @@ if __name__ == '__main__':
     results.write(f'noise to clean object positive ratio: {noise_object_positives / clean_object_positives}\n')
     results.write(f'patch to clean object positive ratio: {patch_object_positives / clean_object_positives}\n')
     results.close()
-    stats = open('test_results.csv', 'a+')
-    stats.write(f'{noise_object_positives / clean_object_positives},{noise_human_positives / clean_human_positives},'
-                f'{patch_object_positives / clean_object_positives},{patch_human_positives / clean_human_positives}\n')
-    stats.close()
+    # stats = open('test_results.csv', 'a+')
+    # stats.write(f'{noise_object_positives / clean_object_positives},{noise_human_positives / clean_human_positives},'
+    #             f'{patch_object_positives / clean_object_positives},{patch_human_positives / clean_human_positives}\n')
+    # stats.close()

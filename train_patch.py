@@ -36,7 +36,7 @@ class PatchTrainer(object):
         self.prob_extractor = MaxProbExtractor(0, 80, self.config).cuda()
         self.non_printability_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
         self.total_variation = TotalVariation().cuda()
-
+        self.saturation_calculator = SaturationCalculator().cuda()
         # Property in which most data is written to, including the patch
         self.writer = self.init_tensorboard(mode)
 
@@ -57,7 +57,7 @@ class PatchTrainer(object):
         # Initialize some settings
         img_size = self.darknet_model.height
         batch_size = self.config.batch_size
-        n_epochs = 1
+        n_epochs = 500
         max_lab = 14
 
         time_str = time.strftime("%Y%m%d-%H%M%S")
@@ -135,12 +135,17 @@ class PatchTrainer(object):
 
                     non_printability_score = self.non_printability_calculator(adv_patch)
                     patch_variation = self.total_variation(adv_patch)
+                    patch_saturation = self.saturation_calculator(adv_patch)
 
                     # Calculates the loss in the new patch, then mashes them all together
                     printability_loss = non_printability_score*0.01
                     patch_variation_loss = patch_variation*2.5
+                    patch_saturation_loss = patch_saturation
                     detection_loss = torch.mean(max_prob)
-                    loss = detection_loss + printability_loss + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())
+                    loss = detection_loss\
+                           + printability_loss\
+                           + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())\
+                           + patch_saturation_loss
                     ep_det_loss += detection_loss.detach().cpu().numpy()
                     ep_nps_loss += printability_loss.detach().cpu().numpy()
                     ep_tv_loss += patch_variation_loss.detach().cpu().numpy()

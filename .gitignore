@@ -121,4 +121,7 @@ ENV/
 # For mac
 .DS_Store
 
+# RStudio
+*.Rproj
+*.Rhistory
 .Rproj.user
