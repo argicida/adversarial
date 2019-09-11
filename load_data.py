@@ -134,14 +134,14 @@ class SaturationCalculator(nn.Module):
     Instead of calculating the actual saturation per https://www.niwa.nu/2013/05/math-behind-colorspace-conversions-rgb-hsl/
     We calculate the variance of r,g,and b scalars within a pixel.
     The more they differ from a shade of grey, (c, c, c), the higher the saturation/variance is
-    These variances are summed across all pixels to measure the saturation level of a patch
+    These variances are averaged across all pixels to measure the saturation level of a patch
     """
 
     def __init__(self):
         super(SaturationCalculator, self).__init__()
 
     def forward(self, adv_patch):
-        return torch.sum(torch.var(adv_patch, 0))
+        return torch.div(torch.sum(torch.var(adv_patch, 0)), adv_patch.numel()/3)
 
 
 class PatchTransformer(nn.Module):
