@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from torch import autograd
 from torchvision import transforms
 from tensorboardX import SummaryWriter
-import subprocess
+# import subprocess
 
 import patch_config
 import sys
@@ -41,7 +41,7 @@ class PatchTrainer(object):
         self.writer = self.init_tensorboard(mode)
 
     def init_tensorboard(self, name=None):
-        subprocess.Popen(['tensorboard', '--logdir=runs'])
+        #subprocess.Popen(['tensorboard', '--logdir=runs'])
         if name is not None:
             time_str = time.strftime("%Y%m%d-%H%M%S")
             return SummaryWriter(f'runs/{time_str}_{name}')
@@ -51,13 +51,12 @@ class PatchTrainer(object):
     def train(self):
         """
         Optimize a patch to generate an adversarial example.
-        :return: Nothing
         """
 
         # Initialize some settings
         img_size = self.darknet_model.height
         batch_size = self.config.batch_size
-        n_epochs = 500
+        n_epochs = 5000
         max_lab = 14
 
         time_str = time.strftime("%Y%m%d-%H%M%S")
@@ -133,21 +132,23 @@ class PatchTrainer(object):
                     output = self.darknet_model(p_img_batch)
                     max_prob = self.prob_extractor(output)
 
-                    non_printability_score = self.non_printability_calculator(adv_patch)
+                    # non_printability_score = self.non_printability_calculator(adv_patch)
                     patch_variation = self.total_variation(adv_patch)
                     patch_saturation = self.saturation_calculator(adv_patch)
 
                     # Calculates the loss in the new patch, then mashes them all together
-                    printability_loss = non_printability_score*0.01
+                    # printability_loss = non_printability_score*0.01
+                    printability_loss = 0
                     patch_variation_loss = patch_variation*2.5
-                    patch_saturation_loss = patch_saturation*0.01
+                    patch_saturation_loss = patch_saturation
                     detection_loss = torch.mean(max_prob)
                     loss = detection_loss\
                            + printability_loss\
                            + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())\
                            + patch_saturation_loss
                     ep_det_loss += detection_loss.detach().cpu().numpy()
-                    ep_nps_loss += printability_loss.detach().cpu().numpy()
+                    # ep_nps_loss += printability_loss.detach().cpu().numpy()
+                    ep_nps_loss = 0
                     ep_tv_loss += patch_variation_loss.detach().cpu().numpy()
                     ep_loss += loss
 
@@ -169,7 +170,7 @@ class PatchTrainer(object):
                         # Writes all this data to the object's tensorboard item, which was initialized as 'writer'
                         self.writer.add_scalar('total_loss', loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/det_loss', detection_loss.detach().cpu().numpy(), iteration)
-                        self.writer.add_scalar('loss/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
+                        # self.writer.add_scalar('loss/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/tv_loss', patch_variation_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('misc/epoch', epoch, iteration)
                         self.writer.add_scalar('misc/learning_rate', optimizer.param_groups[0]["lr"], iteration)
