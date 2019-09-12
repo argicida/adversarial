@@ -59,3 +59,4 @@ ssh -N -f -L localhost:8080:<servername>:<tensorboard_port> <sshusername>@<serve
 ```
 If you don't know the port tensorboard is running on, check it by logging into the server and run `screen -r tensorboard` to log into the screen session, and check for the output from tensorboard. Detach from the screen session without killing it by clicking CTRL+A+D at the same time.
 
+If everything works, you should be able to access the tensorboard by visiting localhost:8080 on your client machine.
