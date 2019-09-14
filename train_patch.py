@@ -132,15 +132,14 @@ class PatchTrainer(object):
                     output = self.darknet_model(p_img_batch)
                     max_prob = self.prob_extractor(output)
 
-                    # non_printability_score = self.non_printability_calculator(adv_patch)
+                    non_printability_score = self.non_printability_calculator(adv_patch)
                     patch_variation = self.total_variation(adv_patch)
                     patch_saturation = self.saturation_calculator(adv_patch)
 
                     # Calculates the loss in the new patch, then mashes them all together
-                    # printability_loss = non_printability_score*0.01
-                    printability_loss = 0
+                    printability_loss = non_printability_score*0.01
                     patch_variation_loss = patch_variation*2.5
-                    patch_saturation_loss = patch_saturation*0.5
+                    patch_saturation_loss = patch_saturation*0.25
                     detection_loss = torch.mean(max_prob)
                     loss = detection_loss\
                            + printability_loss\
