@@ -146,7 +146,7 @@ class PatchTrainer(object):
                            + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())\
                            + patch_saturation_loss
                     ep_det_loss += detection_loss.detach().cpu().numpy()
-                    # ep_nps_loss += printability_loss.detach().cpu().numpy()
+                    ep_nps_loss += printability_loss.detach().cpu().numpy()
                     ep_nps_loss = 0
                     ep_tv_loss += patch_variation_loss.detach().cpu().numpy()
                     ep_loss += loss
@@ -169,7 +169,7 @@ class PatchTrainer(object):
                         # Writes all this data to the object's tensorboard item, which was initialized as 'writer'
                         self.writer.add_scalar('total_loss', loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/det_loss', detection_loss.detach().cpu().numpy(), iteration)
-                        # self.writer.add_scalar('loss/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
+                        self.writer.add_scalar('loss/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/tv_loss', patch_variation_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('misc/epoch', epoch, iteration)
                         self.writer.add_scalar('misc/learning_rate', optimizer.param_groups[0]["lr"], iteration)
