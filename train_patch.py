@@ -56,7 +56,7 @@ class PatchTrainer(object):
         # Initialize some settings
         img_size = self.darknet_model.height
         batch_size = self.config.batch_size
-        n_epochs = 500
+        n_epochs = 1000
         max_lab = 14
 
         time_str = time.strftime("%Y%m%d-%H%M%S")
