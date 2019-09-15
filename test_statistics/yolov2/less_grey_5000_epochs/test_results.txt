@@ -1,0 +1,4 @@
+noise to clean human positive ratio: 0.9309352517985612
+patch to clean human positive ratio: 0.39568345323741005
+noise to clean object positive ratio: 1.0008787346221442
+patch to clean object positive ratio: 0.5263620386643234
