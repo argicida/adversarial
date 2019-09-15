@@ -139,7 +139,7 @@ class PatchTrainer(object):
                     # Calculates the loss in the new patch, then mashes them all together
                     printability_loss = non_printability_score*0.01
                     patch_variation_loss = patch_variation*2.5
-                    patch_saturation_loss = patch_saturation*0.25
+                    patch_saturation_loss = patch_saturation*1
                     detection_loss = torch.mean(max_prob)
                     loss = detection_loss\
                            + printability_loss\
