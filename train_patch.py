@@ -4,22 +4,22 @@ Training code for Adversarial patch training
 
 """
 
-import PIL
-import load_data
+# import PIL
+# import load_data
 from tqdm import tqdm
 
 from load_data import *
-import gc
+# import gc
 import matplotlib.pyplot as plt
 from torch import autograd
 from torchvision import transforms
 from tensorboardX import SummaryWriter
-import subprocess
+# import subprocess
 
 import patch_config
 import sys
 import time
-import datetime
+# import datetime
 
 
 class PatchTrainer(object):
@@ -36,12 +36,12 @@ class PatchTrainer(object):
         self.prob_extractor = MaxProbExtractor(0, 80, self.config).cuda()
         self.non_printability_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
         self.total_variation = TotalVariation().cuda()
-
+        self.saturation_calculator = SaturationCalculator().cuda()
         # Property in which most data is written to, including the patch
         self.writer = self.init_tensorboard(mode)
 
     def init_tensorboard(self, name=None):
-        subprocess.Popen(['tensorboard', '--logdir=runs'])
+        #subprocess.Popen(['tensorboard', '--logdir=runs'])
         if name is not None:
             time_str = time.strftime("%Y%m%d-%H%M%S")
             return SummaryWriter(f'runs/{time_str}_{name}')
@@ -51,13 +51,12 @@ class PatchTrainer(object):
     def train(self):
         """
         Optimize a patch to generate an adversarial example.
-        :return: Nothing
         """
 
         # Initialize some settings
         img_size = self.darknet_model.height
         batch_size = self.config.batch_size
-        n_epochs = 2000
+        n_epochs = 1000
         max_lab = 14
 
         time_str = time.strftime("%Y%m%d-%H%M%S")
@@ -103,7 +102,6 @@ class PatchTrainer(object):
             for i_batch, (img_batch, lab_batch) in tqdm(enumerate(train_loader), desc=f'Running epoch {epoch}',
                                                         total=self.epoch_length):
                 with autograd.detect_anomaly():
-
                     # Optimizes everything to run on GPUs
                     img_batch = img_batch.cuda()
                     lab_batch = lab_batch.cuda()
@@ -136,14 +134,20 @@ class PatchTrainer(object):
 
                     non_printability_score = self.non_printability_calculator(adv_patch)
                     patch_variation = self.total_variation(adv_patch)
+                    patch_saturation = self.saturation_calculator(adv_patch)
 
                     # Calculates the loss in the new patch, then mashes them all together
                     printability_loss = non_printability_score*0.01
                     patch_variation_loss = patch_variation*2.5
+                    patch_saturation_loss = patch_saturation*1
                     detection_loss = torch.mean(max_prob)
-                    loss = detection_loss + printability_loss + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())
+                    loss = detection_loss\
+                           + printability_loss\
+                           + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())\
+                           + patch_saturation_loss
                     ep_det_loss += detection_loss.detach().cpu().numpy()
                     ep_nps_loss += printability_loss.detach().cpu().numpy()
+                    ep_nps_loss = 0
                     ep_tv_loss += patch_variation_loss.detach().cpu().numpy()
                     ep_loss += loss
 

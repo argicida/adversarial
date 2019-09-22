@@ -23,16 +23,16 @@
 
 # run time request
 # day-hour:minute:second
-#SBATCH -t 5-0:0:0
+#SBATCH -t 24:0:0
 
 
 # use the "blackbox" account, which corresponds to our project name
 # put the job in the "interactive" partition, for the RTX6000 GPU on theocho.rc.rit.edu
 # alternatively, we have access to the "onboard" partition
 # -n 4 requests 4 CPUs
-# --gres=gpu:rtx600:1 requests 1 Nvidia rtx6000 GPU (which gives us 24 gig of VRAM)
-#SBATCH -A blackbox -p onboard -n 16 --gres=gpu:v100:1
-# SBATCH -A blackbox -p interactive -n 4 --gres=gpu:rtx6000:1
+# --gres=gpu:v100:1 requests 1 Nvidia rtx6000 GPU (which gives us 24 gig of VRAM)
+# SBATCH -A blackbox -p onboard -n 4 --gres=gpu:v100:1
+#SBATCH -A blackbox -p interactive -n 4 --gres=gpu:rtx6000:1
 
 
 # Job memory requirements in MB
@@ -49,5 +49,10 @@
 # spack list for all available packages
 # spack info for more information on a particular package
 source ./venv/bin/activate
-python train_patch.py paper_obj
+
+for i in {1..200}
+do
+   python test_patch.py
+done
+
 deactivate

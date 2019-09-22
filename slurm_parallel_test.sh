@@ -6,17 +6,17 @@
 
 
 # Name of the job 
-#SBATCH -J blackbox_test
+#SBATCH -J blackbox_parallel_test
 
 
 # Standard out and Standard Error output files
-#SBATCH -o blackbox.out
-#SBATCH -e blackbox.err
+#SBATCH -o parallel.out
+#SBATCH -e parallel.err
 
 
 # To send emails, set the adcdress below and remove one of the "#" signs.
 # IMPORTANT : GIVES GPU FAILURE NOTIFICATIONS
-#SBATCH --mail-user nxg8159@rit.edu
+#SBATCH --mail-user eric@ericmoss.com
 # notify on state change: BEGIN, END, FAIL or ALL
 #SBATCH --mail-type=ALL
 
@@ -30,8 +30,8 @@
 # put the job in the "interactive" partition, for the RTX6000 GPU on theocho.rc.rit.edu
 # alternatively, we have access to the "onboard" partition
 # -n 4 requests 4 CPUs
-# --gres=gpu:v100:1 requests 1 Nvidia rtx6000 GPU (which gives us 24 gig of VRAM)
-#SBATCH -A blackbox -p onboard -n 4 --gres=gpu:v100:1
+# --gres=gpu:rtx600:1 requests 1 Nvidia rtx6000 GPU (which gives us 24 gig of VRAM)
+#SBATCH -A blackbox -p onboard -n4 --gres=gpu:1
 
 
 # Job memory requirements in MB
@@ -48,5 +48,5 @@
 # spack list for all available packages
 # spack info for more information on a particular package
 source ./venv/bin/activate
-python test_patch_fast.py
+python gpu_num.py
 deactivate

@@ -41,3 +41,22 @@ to clean_results.json, noise_results.json, and patch_results.json. It also creat
 ```
 python test_patch.py
 ```
+
+# Tensorboard
+To view the training progress remotely through a tensorboard session, first execute
+```
+chmod +x start_tensorboard_screen_session.sh 
+```
+, which only needs to be done once on a server.
+Then start a persistent session running tensorboard by executing
+```
+./start_tensorboard_screen_session.sh
+```
+, which will run the tensorboard server as long as the screen session persists, meaning that you can close the terminal and it will still be accessible.
+To access the tensorboard server remotely, on the client machine, execute
+```
+ssh -N -f -L localhost:8080:<servername>:<tensorboard_port> <sshusername>@<servername>
+```
+If you don't know the port tensorboard is running on, check it by logging into the server and run `screen -r tensorboard` to log into the screen session, and check for the output from tensorboard. Detach from the screen session without killing it by clicking CTRL+A+D at the same time.
+
+If everything works, you should be able to access the tensorboard by visiting localhost:8080 on your client machine.

@@ -1,0 +1,27 @@
+>>> import pandas as pd
+>>> import numpy as np
+>>> stats = pd.read_csv('perry_08-26_500_epochs_statistics.csv')
+>>> stats.count()
+noise_object_positive_ratio    200
+noise_human_positive_ratio     200
+patch_object_positive_ratio    200
+patch_human_positive_ratio     200
+dtype: int64
+>>> small = stats.sample(100)
+>>> np.var(small['noise_object_positive_ratio'].values)
+4.679717445893756e-05
+>>> np.var(stats['noise_object_positive_ratio'].values)
+4.712146845975915e-05
+>>> np.var(stats['noise_human_positive_ratio'].values)
+4.8698100512395696e-05
+>>> np.var(small['noise_human_positive_ratio'].values)
+5.1275813881268925e-05
+>>> np.var(small['patch_human_positive_ratio'].values)
+0.00012586905439677034
+>>> np.var(stats['patch_human_positive_ratio'].values)
+0.00011307484084674708
+>>> np.var(stats['patch_object_positive_ratio'].values)
+5.1453367607587e-05
+>>> np.var(small['patch_object_positive_ratio'].values)
+5.0760514700658764e-05
+

@@ -3,10 +3,14 @@ blackbox.err
 blackbox.out
 
 # slurm scripts
-slurm_test_patch.sh
-slurm_train_patch.sh
+slurm*.sh
+
+# videos
+test_videos/*
+videos_results.txt
 
 # patch testing output
+test_results.txt
 testing/*/*.png
 testing/*/*/*.txt
 clean_results.json
@@ -121,3 +125,7 @@ ENV/
 # For mac
 .DS_Store
 
+# RStudio
+*.Rproj
+*.Rhistory
+.Rproj.user

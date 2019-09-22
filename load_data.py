@@ -19,10 +19,6 @@ from darknet import Darknet
 
 from median_pool import MedianPool2d
 
-print('starting test read')
-im = Image.open('data/horse.jpg').convert('RGB')
-print('img read!')
-
 
 class MaxProbExtractor(nn.Module):
     """MaxProbExtractor: extracts max class probability for class from YOLO output.
@@ -129,6 +125,23 @@ class TotalVariation(nn.Module):
         tvcomp2 = torch.sum(torch.sum(tvcomp2,0),0)
         tv = tvcomp1 + tvcomp2
         return tv/torch.numel(adv_patch)
+
+
+class SaturationCalculator(nn.Module):
+    """SaturationCalculator: calculates the saturation of a patch.
+
+    Module providing the functionality necessary to calculate the saturation of an adversarial patch.
+    Instead of calculating the actual saturation per https://www.niwa.nu/2013/05/math-behind-colorspace-conversions-rgb-hsl/
+    We calculate the variance of r,g,and b scalars within a pixel.
+    The more they differ from a shade of grey, (c, c, c), the higher the saturation/variance is
+    These variances are averaged across all pixels to measure the saturation level of a patch
+    """
+
+    def __init__(self):
+        super(SaturationCalculator, self).__init__()
+
+    def forward(self, adv_patch):
+        return torch.div(torch.sum(torch.var(adv_patch, 0)), adv_patch.numel()/3)
 
 
 class PatchTransformer(nn.Module):
@@ -424,97 +437,3 @@ class InriaDataset(Dataset):
             padded_lab = lab
         return padded_lab
 
-if __name__ == '__main__':
-    if len(sys.argv) == 3:
-        img_dir = sys.argv[1]
-        lab_dir = sys.argv[2]
-
-    else:
-        print('Usage: ')
-        print('  python load_data.py img_dir lab_dir')
-        sys.exit()
-
-    test_loader = torch.utils.data.DataLoader(InriaDataset(img_dir, lab_dir, shuffle=True),
-                                              batch_size=3, shuffle=True)
-
-    cfgfile = "cfg/yolov2.cfg"
-    weightfile = "weights/yolov2.weights"
-    printfile = "non_printability/30values.txt"
-    
-    patch_size = 400
-
-    darknet_model = Darknet(cfgfile)
-    darknet_model.load_weights(weightfile)
-    darknet_model = darknet_model.cuda()
-    patch_applier = PatchApplier().cuda()
-    patch_transformer = PatchTransformer().cuda()
-    prob_extractor = MaxProbExtractor(0, 80).cuda()
-    nms_calculator = NMSCalculator(printfile, patch_size)
-    total_variation = TotalVariation()
-    '''
-    img = Image.open('data/horse.jpg').convert('RGB')
-    img = img.resize((darknet_model.width, darknet_model.height))
-    width = img.width
-    height = img.height
-    img = torch.ByteTensor(torch.ByteStorage.from_buffer(img.tobytes()))
-    img = img.view(height, width, 3).transpose(0, 1).transpose(0, 2).contiguous()
-    img = img.view(1, 3, height, width)
-    img = img.float().div(255.0)
-    img = torch.autograd.Variable(img)
-
-    output = darknet_model(img)
-    '''
-    optimizer = torch.optim.Adam(model.parameters(), lr = 0.0001)
-    
-    tl0 = time.time()
-    tl1 = time.time()
-    for i_batch, (img_batch, lab_batch) in enumerate(test_loader):
-        tl1 = time.time()
-        print('time to fetch items: ',tl1-tl0)
-        img_batch = img_batch.cuda()
-        lab_batch = lab_batch.cuda()
-        adv_patch = Image.open('data/horse.jpg').convert('RGB')
-        adv_patch = adv_patch.resize((patch_size, patch_size))
-        transform = transforms.ToTensor()
-        adv_patch = transform(adv_patch).cuda()
-        img_size = img_batch.size(-1)
-        print('transforming patches')
-        t0 = time.time()
-        adv_batch_t = patch_transformer.forward(adv_patch, lab_batch, img_size)
-        print('applying patches')
-        t1 = time.time()
-        img_batch = patch_applier.forward(img_batch, adv_batch_t)
-        img_batch = torch.autograd.Variable(img_batch)
-        img_batch = F.interpolate(img_batch,(darknet_model.height, darknet_model.width))
-        print('running patched images through model')
-        t2 = time.time()
-
-        for obj in gc.get_objects():
-            try:
-                if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                    try:
-                        print(type(obj), obj.size())
-                    except:
-                        pass
-            except:
-                pass
-
-        print(torch.cuda.memory_allocated())
-
-        output = darknet_model(img_batch)
-        print('extracting max probs')
-        t3 = time.time()
-        max_prob = prob_extractor(output)
-        t4 = time.time()
-        nms = nms_calculator.forward(adv_patch)
-        tv = total_variation(adv_patch)
-        print('---------------------------------')
-        print('        patch transformation : %f' % (t1-t0))
-        print('           patch application : %f' % (t2-t1))
-        print('             darknet forward : %f' % (t3-t2))
-        print('      probability extraction : %f' % (t4-t3))
-        print('---------------------------------')
-        print('          total forward pass : %f' % (t4-t0))
-        del img_batch, lab_batch, adv_patch, adv_batch_t, output, max_prob
-        torch.cuda.empty_cache()
-        tl0 = time.time()
