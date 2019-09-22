@@ -13,8 +13,12 @@ clean_results.json
 noise_results.json
 patch_results.json
 
+# dataset
+implementations/ssd-pytorch/ssd.pytorch/VOCdevkit
+
 # weights
 weights/
+implementations/ssd-pytorch/ssd.pytorch/weights
 
 # tensorboard?
 runs/
