@@ -12,14 +12,49 @@ from utils import *
 from darknet import *
 from load_data import PatchTransformer, PatchApplier, InriaDataset
 import json
+import torch.backends.cudnn as cudnn
+from torch.autograd import Variable
+import numpy as np
+from implementations.ssd_pytorch.ssd import build_ssd
+from implementations.ssd_pytorch.data import VOCDetection, VOC_ROOT, VOCAnnotationTransform
+from implementations.ssd_pytorch.data import VOC_CLASSES as labels
+import cv2
+module_path = os.path.abspath(os.path.join('..'))
+if module_path not in sys.path:
+    sys.path.append(module_path)
 
 
-def test_results(image, darknet_model):
+def test_results_ssd(image):
+    human_positives = 0
+    total_positives = 0
+    net = build_ssd('test', 300, 21)    # initialize ssd
+    net.load_weights('./implementations/ssd_pytorch/weights/ssd300_mAP_77.43_v2.pth')
+    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    x = cv2.resize(image, (300, 300)).astype(np.float32)
+    x -= (104.0, 117.0, 123.0)
+    x = x.astype(np.float32)
+    x = x[:, :, ::-1].copy()
+    x = torch.from_numpy(x).permute(2, 0, 1)
+    xx = Variable(x.unsqueeze(0))  # wrap tensor in Variable
+    if torch.cuda.is_available():
+        xx = xx.cuda()
+    y = net(xx)
+    detections = y.data
+    for i in range(detections.size(1)):
+        j = 0
+        while detections[0, i, j, 0] >= 0.6:
+            if labels[i-1] == "person":
+                human_positives += 1
+            total_positives += 1
+    return human_positives, total_positives
+
+
+def test_results_darknet(image, darknet_model):
     detection_confidence_threshold = 0.5
     nms_threshold = 0.4
     human_box_count = 0
     boxes = do_detect(darknet_model, image, detection_confidence_threshold, nms_threshold, use_cuda=True)
-    #boxes = nms(boxes, nms_threshold)
+    # boxes = nms(boxes, nms_threshold)
     for box in boxes:
         if box[6] == 0:
             human_box_count = human_box_count + 1
@@ -102,7 +137,10 @@ if __name__ == '__main__':
             # padded_img.save(os.path.join(savedir, 'clean/', cleanname))
 
             """ at this point, clean images are prepped to be analyzed by yolo """
-            human_positives, object_positives = test_results(padded_img, darknet_model)
+            human_positives, object_positives = test_results_darknet(padded_img, darknet_model)
+            clean_human_positives += human_positives
+            clean_object_positives += object_positives
+            human_positives, object_positives = test_results_ssd(padded_img)
             clean_human_positives += human_positives
             clean_object_positives += object_positives
             '''
@@ -131,7 +169,7 @@ if __name__ == '__main__':
             """ At this point, image recognition has been ran, and humans detected in images have been tracked"""
 
             # read this label file back as a tensor
-            if os.path.getsize(txtpath):       #check to see if label file contains data. 
+            if os.path.getsize(txtpath):       #check to see if label file contains data.
                 label = np.loadtxt(txtpath)
             else:
                 label = np.ones([5])
@@ -147,7 +185,7 @@ if __name__ == '__main__':
             padded_img = transform(padded_img).cuda()
             img_fake_batch = padded_img.unsqueeze(0)
             lab_fake_batch = label.unsqueeze(0).cuda()
-            
+
             # transform patch and add it to image
             adv_batch_t = patch_transformer(adv_patch, lab_fake_batch, img_size, do_rotate=True, rand_loc=False)
             p_img_batch = patch_applier(img_fake_batch, adv_batch_t)
@@ -155,11 +193,14 @@ if __name__ == '__main__':
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
             properpatchedname = name + "_p.png"
             # p_img_pil.save(os.path.join(savedir, 'proper_patched/', properpatchedname))
-            
+
             # generate a label file for the image with sticker
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'proper_patched/', 'yolo-labels/', txtname))
-            human_positives, object_positives = test_results(p_img_pil, darknet_model)
+            human_positives, object_positives = test_results_darknet(p_img_pil, darknet_model)
+            patch_human_positives += human_positives
+            patch_object_positives += object_positives
+            human_positives, object_positives = test_results_ssd(p_img_pil)
             patch_human_positives += human_positives
             patch_object_positives += object_positives
             '''
@@ -186,11 +227,14 @@ if __name__ == '__main__':
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
             properpatchedname = name + "_rdp.png"
             # p_img_pil.save(os.path.join(savedir, 'random_patched/', properpatchedname))
-            
-            # generate a label file for the random patch image
+
+             # generate a label file for the random patch image
             txtname = properpatchedname.replace('.png', '.txt')
             txtpath = os.path.abspath(os.path.join(savedir, 'random_patched/', 'yolo-labels/', txtname))
-            human_positives, object_positives = test_results(p_img_pil, darknet_model)
+            human_positives, object_positives = test_results_darknet(p_img_pil, darknet_model)
+            noise_human_positives += human_positives
+            noise_object_positives += object_positives
+            human_positives, object_positives = test_results_ssd(p_img_pil)
             noise_human_positives += human_positives
             noise_object_positives += object_positives
             '''
@@ -225,5 +269,5 @@ if __name__ == '__main__':
     results.close()
     # stats = open('test_results.csv', 'a+')
     # stats.write(f'{noise_object_positives / clean_object_positives},{noise_human_positives / clean_human_positives},'
-    #             f'{patch_object_positives / clean_object_positives},{patch_human_positives / clean_human_positives}\n')
+    # f'{patch_object_positives / clean_object_positives},{patch_human_positives / clean_human_positives}\n')
     # stats.close()
