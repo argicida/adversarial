@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "train.py", line 1, in <module>
+    from data import *
+  File "/home/nxg8159/argicida/implementations/ssd-pytorch/ssd.pytorch/data/__init__.py", line 3, in <module>
+    from .coco import COCODetection, COCOAnnotationTransform, COCO_CLASSES, COCO_ROOT, get_label_map
+  File "/home/nxg8159/argicida/implementations/ssd-pytorch/ssd.pytorch/data/coco.py", line 75, in <module>
+    class COCODetection(data.Dataset):
+  File "/home/nxg8159/argicida/implementations/ssd-pytorch/ssd.pytorch/data/coco.py", line 87, in COCODetection
+    target_transform=COCOAnnotationTransform(), dataset_name='MS COCO'):
+  File "/home/nxg8159/argicida/implementations/ssd-pytorch/ssd.pytorch/data/coco.py", line 47, in __init__
+    self.label_map = get_label_map(osp.join(COCO_ROOT, 'coco_labels.txt'))
+  File "/home/nxg8159/argicida/implementations/ssd-pytorch/ssd.pytorch/data/coco.py", line 35, in get_label_map
+    labels = open(label_file, 'r')
+FileNotFoundError: [Errno 2] No such file or directory: '/home/nxg8159/data/coco/coco_labels.txt'
