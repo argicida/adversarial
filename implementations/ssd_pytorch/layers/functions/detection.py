@@ -1,7 +1,10 @@
 import torch
+import sys
 from torch.autograd import Function
 from ..box_utils import decode, nms
-from data import voc as cfg
+sys.path.append('/home/nxg8159/argicida/implementations/ssd_pytorch/data')
+print(sys.path)
+from ...data import voc as cfg
 
 
 class Detect(Function):
