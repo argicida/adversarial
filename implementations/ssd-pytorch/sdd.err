@@ -1,4 +1,0 @@
-  File "train.py", line 175
-    yheet = open("normalized.txt", "w")
-                                      ^
-TabError: inconsistent use of tabs and spaces in indentation
