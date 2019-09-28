@@ -62,12 +62,13 @@ def test_results_ssd(image, net):
     total_positives = 0
     tensor = None
     if isinstance(image, Image.Image):
+        print("isInstance 1")
         width = image.width
         height = image.height
         tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
         tensor = tensor.view(height, width, 3).transpose(0, 1).transpose(0, 2).contiguous().cuda()
         tensor = tensor.view(1, 3, height, width)
-        tensor = tensor.float().div(255.0)
+        tensor = tensor.float().div(255.0).cuda()
     elif type(image) == np.ndarray:  # cv2 image
         tensor = torch.from_numpy(image.transpose(2, 0, 1)).float().div(255.0).unsqueeze(0).cuda()
     else:
@@ -75,8 +76,6 @@ def test_results_ssd(image, net):
         exit(-1)
     if torch.cuda.is_available():
         tensor = tensor.cuda()
-        print("tensor is set to cuda")
-    print(str(tensor))
     y = net(tensor)
     detections = y.data
     for i in range(detections.size(1)):
@@ -115,7 +114,7 @@ def load_yolov3():
     yolov3_weightfile = "./implementations/yolov3/weights/yolov3.weights"
     yolov3 = Yolov3(yolov3_cfgfile)
     yolov3.load_darknet_weights(yolov3_weightfile)
-    return yolov3.eval().cuda()
+    return yolov3.cuda()
 
 
 def load_ssd():

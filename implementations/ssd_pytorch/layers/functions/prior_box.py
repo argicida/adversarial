@@ -50,6 +50,8 @@ class PriorBox(object):
                     mean += [cx, cy, s_k/sqrt(ar), s_k*sqrt(ar)]
         # back to torch land
         output = torch.Tensor(mean).view(-1, 4)
+        if torch.cuda.is_available():
+            output = output.cuda()
         if self.clip:
             output.clamp_(max=1, min=0)
         return output
