@@ -26,6 +26,7 @@ from implementations.yolov3.utils import utils as yolov3_utils
 
 
 def test_results_yolov3(image, net):
+    print("yolo3_test")
     detection_confidence_threshold = 0.5
     nms_thres = 0.4
     human_positives = 0
@@ -58,6 +59,7 @@ def test_results_yolov3(image, net):
 
 
 def test_results_ssd(image, net):
+    print("ssd_test")
     human_positives = 0
     total_positives = 0
     tensor = None
@@ -88,6 +90,7 @@ def test_results_ssd(image, net):
 
 
 def test_results_yolov2(image, darknet_model):
+    print("yolo2_test")
     detection_confidence_threshold = 0.5
     nms_threshold = 0.4
     human_box_count = 0
@@ -124,7 +127,7 @@ def load_ssd():
 
 
 def main():
-    # print("Setting everything up")
+    print("Setting everything up")
     yolov2 = load_yolov2()
     ssd = load_ssd()
     yolov3 = load_yolov3()
@@ -175,7 +178,7 @@ def main():
     yolov3_patch_human_positives = 0
     yolov3_patch_object_positives = 0
 
-    # Walk over clean images
+    print("Walking over clean images")
     for imgfile in os.listdir(test_imgdir):
         if imgfile.endswith('.jpg') or imgfile.endswith('.png'):
             name = os.path.splitext(imgfile)[0]    # image name w/o extension
@@ -210,6 +213,7 @@ def main():
             # padded_img.save(os.path.join(savedir, 'clean/', cleanname))
 
             """ at this point, clean images are prepped to be analyzed by yolo """
+            print("Ready to be analyzed")
             human_positives, object_positives = test_results_yolov2(padded_img, yolov2)
             yolov2_clean_human_positives += human_positives
             yolov2_clean_object_positives += object_positives
