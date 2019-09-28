@@ -8,6 +8,7 @@ Training code for Adversarial patch training
 # import load_data
 from tqdm import tqdm
 
+from implementations.yolov3.models import Darknet as Yolov3
 from load_data import *
 # import gc
 import matplotlib.pyplot as plt
@@ -22,18 +23,45 @@ import time
 # import datetime
 
 
+def load_yolov2():
+    yolov2_cfgfile = "cfg/yolov2.cfg"
+    yolov2_weightfile = "weights/yolov2.weights"
+    yolov2 = Darknet(yolov2_cfgfile)
+    yolov2.load_weights(yolov2_weightfile)
+    return yolov2.eval().cuda()
+
+
+def load_yolov3():
+    yolov3_cfgfile = "./implementations/yolov3/config/yolov3.cfg"
+    yolov3_weightfile = "./implementations/yolov3/weights/yolov3.weights"
+    yolov3 = Yolov3(yolov3_cfgfile)
+    yolov3.load_darknet_weights(yolov3_weightfile)
+    return yolov3.eval().cuda()
+
+
+class Yolov3_Output_Extractor(nn.module):
+    def __init__(self, cls_id, num_cls, config):
+        super(Yolov3_Output_Extractor, self).__init__()
+        self.cls_id = cls_id
+        self.num_cls = num_cls
+        self.config = config
+        return
+
+    def forward(self):
+        return
+
+
 class PatchTrainer(object):
     def __init__(self, mode):
         self.config = patch_config.patch_configs[mode]()
 
-        self.darknet_model = Darknet(self.config.cfgfile)
-        self.darknet_model.load_weights(self.config.weightfile)
-        self.darknet_model = self.darknet_model.eval().cuda() # TODO: Why eval?
-        # TODO: note from Perry - eval() sets the target architecture to be static and not trainable,
-        #  which is desired when training patches
+        self.yolov2 = load_yolov2()
+        self.yolov3 = load_yolov3()
+
         self.patch_applier = PatchApplier().cuda()
         self.patch_transformer = PatchTransformer().cuda()
-        self.prob_extractor = MaxProbExtractor(0, 80, self.config).cuda()
+        self.yolov2_output_extractor = Yolov2_Output_Extractor(0, 80, self.config).cuda()
+        self.yolov3_output_extractor = Yolov3_Output_Extractor().cuda()
         self.non_printability_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
         self.total_variation = TotalVariation().cuda()
         self.saturation_calculator = SaturationCalculator().cuda()
@@ -54,7 +82,7 @@ class PatchTrainer(object):
         """
 
         # Initialize some settings
-        img_size = self.darknet_model.height
+        img_size = self.yolov2.height
         batch_size = self.config.batch_size
         n_epochs = 1000
         max_lab = 14
@@ -117,7 +145,7 @@ class PatchTrainer(object):
                     # TODO: find documentation for this object
                     # TODO: note from Perry: which object? patch_applier is from this file, F is torch.nn.functional
                     p_img_batch = self.patch_applier(img_batch, adv_batch_t)
-                    p_img_batch = F.interpolate(p_img_batch, (self.darknet_model.height, self.darknet_model.width))
+                    p_img_batch = F.interpolate(p_img_batch, (self.yolov2.height, self.yolov2.width))
 
 
                     # TODO: Figure out exactly what these transforms are doing
@@ -128,9 +156,10 @@ class PatchTrainer(object):
 
                     # Looks to be where the given patch is evaluated, however all these objects are not included within
                     # The given darknet model. Documentation for the original needs to be found and researched
-                    # TODO: Read documentation for original Darknet model
-                    output = self.darknet_model(p_img_batch)
-                    max_prob = self.prob_extractor(output)
+                    output_yolov2 = self.yolov2(p_img_batch)
+                    output_yolov3 = self.yolov3(p_img_batch)
+                    max_prob_yolov2 = self.yolov2_output_extractor(output_yolov2)
+                    max_prob_yolov3 = self.yolov3_output_extractor(output_yolov3)
 
                     non_printability_score = self.non_printability_calculator(adv_patch)
                     patch_variation = self.total_variation(adv_patch)
@@ -140,12 +169,15 @@ class PatchTrainer(object):
                     printability_loss = non_printability_score*0.01
                     patch_variation_loss = patch_variation*2.5
                     patch_saturation_loss = patch_saturation*1
-                    detection_loss = torch.mean(max_prob)
-                    loss = detection_loss\
+
+                    detection_loss_yolov2 = torch.mean(max_prob_yolov2)
+                    detection_loss_yolov3 = torch.mean(max_prob_yolov3)
+
+                    loss = detection_loss_yolov2 + detection_loss_yolov3\
                            + printability_loss\
                            + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())\
                            + patch_saturation_loss
-                    ep_det_loss += detection_loss.detach().cpu().numpy()
+                    ep_det_loss += detection_loss_yolov2.detach().cpu().numpy()
                     ep_nps_loss += printability_loss.detach().cpu().numpy()
                     ep_nps_loss = 0
                     ep_tv_loss += patch_variation_loss.detach().cpu().numpy()
@@ -168,7 +200,7 @@ class PatchTrainer(object):
 
                         # Writes all this data to the object's tensorboard item, which was initialized as 'writer'
                         self.writer.add_scalar('total_loss', loss.detach().cpu().numpy(), iteration)
-                        self.writer.add_scalar('loss/det_loss', detection_loss.detach().cpu().numpy(), iteration)
+                        self.writer.add_scalar('loss/det_loss', detection_loss_yolov2.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/tv_loss', patch_variation_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('misc/epoch', epoch, iteration)
@@ -181,7 +213,7 @@ class PatchTrainer(object):
                     if i_batch + 1 >= len(train_loader):
                         print('\n')
                     else:
-                        del adv_batch_t, output, max_prob, detection_loss, p_img_batch, printability_loss, patch_variation_loss, loss
+                        del adv_batch_t, output_yolov2, max_prob_yolov2, detection_loss_yolov2, p_img_batch, printability_loss, patch_variation_loss, loss
                         torch.cuda.empty_cache()
                     bt0 = time.time()
 
@@ -204,7 +236,7 @@ class PatchTrainer(object):
                 print('  NPS LOSS: ', ep_nps_loss)
                 print('   TV LOSS: ', ep_tv_loss)
                 print('EPOCH TIME: ', et1-et0)
-                del adv_batch_t, output, max_prob, detection_loss, p_img_batch, printability_loss, patch_variation_loss, loss
+                del adv_batch_t, output_yolov2, max_prob_yolov2, detection_loss_yolov2, p_img_batch, printability_loss, patch_variation_loss, loss
                 torch.cuda.empty_cache()
             et0 = time.time()
 

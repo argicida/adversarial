@@ -20,7 +20,7 @@ from darknet import Darknet
 from median_pool import MedianPool2d
 
 
-class MaxProbExtractor(nn.Module):
+class Yolov2_Output_Extractor(nn.Module):
     """MaxProbExtractor: extracts max class probability for class from YOLO output.
 
     Module providing the functionality necessary to extract the max class probability for one class from YOLO output.
@@ -28,7 +28,7 @@ class MaxProbExtractor(nn.Module):
     """
 
     def __init__(self, cls_id, num_cls, config):
-        super(MaxProbExtractor, self).__init__()
+        super(Yolov2_Output_Extractor, self).__init__()
         self.cls_id = cls_id
         self.num_cls = num_cls
         self.config = config
@@ -51,8 +51,6 @@ class MaxProbExtractor(nn.Module):
         normal_confs = torch.nn.Softmax(dim=1)(output)
         # we only care for probabilities of the class of interest (person)
         confs_for_class = normal_confs[:, self.cls_id, :]
-        confs_if_object = output_objectness #confs_for_class * output_objectness
-        confs_if_object = confs_for_class * output_objectness
         confs_if_object = self.config.loss_target(output_objectness, confs_for_class)
         # find the max probability for person
         max_conf, max_conf_idx = torch.max(confs_if_object, dim=1)

@@ -37,7 +37,7 @@ class PatchTrainer(object):
 
         self.patch_applier = PatchApplier().cuda()
         self.patch_transformer = PatchTransformer().cuda()
-        self.prob_extractor = MaxProbExtractor(0, 80, self.config).cuda()
+        self.prob_extractor = Yolov2_Output_Extractor(0, 80, self.config).cuda()
         self.nps_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
         self.total_variation = TotalVariation().cuda()
 
