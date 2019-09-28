@@ -20,9 +20,6 @@ from implementations.ssd_pytorch.ssd import build_ssd
 from implementations.ssd_pytorch.data import VOCDetection, VOC_ROOT, VOCAnnotationTransform
 from implementations.ssd_pytorch.data import VOC_CLASSES as labels
 import cv2
-module_path = os.path.abspath(os.path.join('..'))
-if module_path not in sys.path:
-    sys.path.append(module_path)
 
 from implementations.yolov3.models import Darknet as Yolov3
 from implementations.yolov3.utils import utils as yolov3_utils
@@ -33,15 +30,30 @@ def test_results_yolov3(image, net):
     nms_thres = 0.4
     human_positives = 0
     total_positives = 0
-    tensor = torch.from_numpy(image.transpose(2,0,1)).float().div(255.0).unsqueeze(0)
+
+    tensor = None
+    if isinstance(image, Image.Image):
+        width = image.width
+        height = image.height
+        tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
+        tensor = tensor.view(height, width, 3).transpose(0, 1).transpose(0, 2).contiguous().cuda()
+        tensor = tensor.view(1, 3, height, width)
+        tensor = tensor.float().div(255.0)
+    elif type(image) == np.ndarray:  # cv2 image
+        tensor = torch.from_numpy(image.transpose(2, 0, 1)).float().div(255.0).unsqueeze(0).cuda()
+    else:
+        print("unknown image type")
+        exit(-1)
+
     with torch.no_grad():
         outputs = net(tensor)
         outputs = yolov3_utils.non_max_suppression(outputs, conf_thres=detection_confidence_threshold, nms_thres=nms_thres)
         boxes = outputs[0]
-    for box in boxes:
-        if box[6] == 0:
-            human_positives += 1
-    total_positives = len(boxes)
+    if boxes is not None:
+        for box in boxes:
+            if box[6] == 0:
+                human_positives += 1
+        total_positives = len(boxes)
     return human_positives, total_positives
 
 
@@ -98,19 +110,22 @@ def load_yolov3():
     return yolov3.eval().cuda()
 
 
-if __name__ == '__main__':
-    # print("Setting everything up")
-    yolov2 = load_yolov2()
-
+def load_ssd():
     ssd_model = build_ssd('test', 300, 21)    # initialize ssd
     ssd_model.load_weights('./implementations/ssd_pytorch/weights/ssd300_mAP_77.43_v2.pth')
+    return ssd_model.eval().cuda()
+
+
+def main():
+    # print("Setting everything up")
+    yolov2 = load_yolov2()
 
     yolov3 = load_yolov3()
 
     test_imgdir = "inria/Test/pos"
     cachedir = "testing"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
-    patchfile = "saved_patches/perry_09-14_19-46-08-1000_epochs.jpg"
+    patchfile = "saved_patches/perry_08-26_500_epochs.jpg"
 
     patch_applier = PatchApplier().cuda()
     patch_transformer = PatchTransformer().cuda()
@@ -187,14 +202,34 @@ if __name__ == '__main__':
             human_positives, object_positives = test_results_yolov2(padded_img, yolov2)
             yolov2_clean_human_positives += human_positives
             yolov2_clean_object_positives += object_positives
-            human_positives, object_positives = test_results_ssd(cleanname, ssd_model)
+
+            #human_positives, object_positives = test_results_ssd(cleanname, ssd_model)
+
             ssd_clean_human_positives += human_positives
             ssd_clean_object_positives += object_positives
             human_positives, object_positives = test_results_yolov3(padded_img, yolov3)
             yolov3_clean_human_positives += human_positives
             yolov3_clean_object_positives += object_positives
-            '''
-            # generate a label file for the padded image
+
+            try:
+                _ = os.path.getsize(txtpath)
+            except FileNotFoundError:
+                # generate a label file for the padded image
+                boxes = do_detect(yolov2, padded_img, 0.5, 0.4, True) # run yolo object detection on image
+                #boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes, already called in do_detect()
+                textfile = open(txtpath,'w+')
+                for box in boxes:
+                    cls_id = box[6]
+                    if(cls_id == 0):   # if person
+                        x_center = box[0]
+                        y_center = box[1]
+                        width = box[2]
+                        height = box[3]
+                        textfile.write(f'{cls_id} {x_center} {y_center} {width} {height}\n')
+                        # add detected box to label file (only for people)
+                textfile.close()
+            """
+            generate a label file for the padded image
             boxes = do_detect(darknet_model, padded_img, 0.5, 0.4, True) # run yolo object detection on image
             #boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes, already called in do_detect()
             textfile = open(txtpath,'w+')
@@ -214,7 +249,7 @@ if __name__ == '__main__':
                                           'score': box[4].item(),
                                           'category_id': 1})
             textfile.close()
-            '''
+            """
 
             """ At this point, image recognition has been ran, and humans detected in images have been tracked"""
 
@@ -250,7 +285,7 @@ if __name__ == '__main__':
             human_positives, object_positives = test_results_yolov2(p_img_pil, yolov2)
             yolov2_patch_human_positives += human_positives
             yolov2_patch_object_positives += object_positives
-            human_positives, object_positives = test_results_ssd(p_img_pil)
+            #human_positives, object_positives = test_results_ssd(p_img_pil)
             ssd_patch_human_positives += human_positives
             ssd_patch_object_positives += object_positives
             human_positives, object_positives = test_results_yolov3(p_img_pil, yolov3)
@@ -287,7 +322,7 @@ if __name__ == '__main__':
             human_positives, object_positives = test_results_yolov2(p_img_pil, yolov2)
             yolov2_noise_human_positives += human_positives
             yolov2_noise_object_positives += object_positives
-            human_positives, object_positives = test_results_ssd(p_img_pil)
+            #human_positives, object_positives = test_results_ssd(p_img_pil)
             ssd_noise_human_positives += human_positives
             ssd_noise_object_positives += object_positives
             human_positives, object_positives = test_results_yolov3(p_img_pil, yolov3)
@@ -318,23 +353,28 @@ if __name__ == '__main__':
     '''
     print("Done")
     results = open('test_results.txt', 'w+')
-    results.write('yolov2 results\n')
+    results.write(patchfile)
+    results.write('\nyolov2 results\n')
     results.write(f'noise to clean human positive ratio: {yolov2_noise_human_positives / yolov2_clean_human_positives}\n')
     results.write(f'patch to clean human positive ratio: {yolov2_patch_human_positives / yolov2_clean_human_positives}\n')
     results.write(f'noise to clean object positive ratio: {yolov2_noise_object_positives / yolov2_clean_object_positives}\n')
     results.write(f'patch to clean object positive ratio: {yolov2_patch_object_positives / yolov2_clean_object_positives}\n')
-    results.write('ssd results\n')
-    results.write(f'noise to clean human positive ratio: {ssd_noise_human_positives / ssd_clean_human_positives}\n')
-    results.write(f'patch to clean human positive ratio: {ssd_patch_human_positives / ssd_clean_human_positives}\n')
-    results.write(f'noise to clean object positive ratio: {ssd_noise_object_positives / ssd_clean_object_positives}\n')
-    results.write(f'patch to clean object positive ratio: {ssd_patch_object_positives / ssd_clean_object_positives}\n')
+    # results.write('ssd results\n')
+    # results.write(f'noise to clean human positive ratio: {ssd_noise_human_positives / ssd_clean_human_positives}\n')
+    # results.write(f'patch to clean human positive ratio: {ssd_patch_human_positives / ssd_clean_human_positives}\n')
+    # results.write(f'noise to clean object positive ratio: {ssd_noise_object_positives / ssd_clean_object_positives}\n')
+    # results.write(f'patch to clean object positive ratio: {ssd_patch_object_positives / ssd_clean_object_positives}\n')
     results.write('yolov3 results\n')
     results.write(f'noise to clean human positive ratio: {yolov3_noise_human_positives / yolov3_clean_human_positives}\n')
     results.write(f'patch to clean human positive ratio: {yolov3_patch_human_positives / yolov3_clean_human_positives}\n')
-    results.write(f'noise to clean object positive ratio: {yolov2_noise_object_positives / yolov2_clean_object_positives}\n')
-    results.write(f'patch to clean object positive ratio: {yolov2_patch_object_positives / yolov2_clean_object_positives}\n')
+    results.write(f'noise to clean object positive ratio: {yolov3_noise_object_positives / yolov3_clean_object_positives}\n')
+    results.write(f'patch to clean object positive ratio: {yolov3_patch_object_positives / yolov3_clean_object_positives}\n')
     results.close()
     # stats = open('test_results.csv', 'a+')
     # stats.write(f'{noise_object_positives / clean_object_positives},{noise_human_positives / clean_human_positives},'
     # f'{patch_object_positives / clean_object_positives},{patch_human_positives / clean_human_positives}\n')
     # stats.close()
+
+
+if __name__ == '__main__':
+    main()
