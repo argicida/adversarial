@@ -23,6 +23,7 @@ implementations/ssd-pytorch/ssd.pytorch/VOCdevkit
 # weights
 weights/
 implementations/ssd-pytorch/weights
+implementations/yolov3/weights
 
 # tensorboard?
 runs/

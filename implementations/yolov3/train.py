@@ -1,11 +1,11 @@
 from __future__ import division
 
-from models import *
-from utils.logger import *
-from utils.utils import *
-from utils.datasets import *
-from utils.parse_config import *
-from test import evaluate
+from .models import *
+from .utils.logger import *
+from .utils.utils import *
+from .utils.datasets import *
+from .utils.parse_config import *
+from .test import evaluate
 
 from terminaltables import AsciiTable
 
