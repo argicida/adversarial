@@ -60,16 +60,24 @@ def test_results_yolov3(image, net):
 def test_results_ssd(image, net):
     human_positives = 0
     total_positives = 0
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    x = cv2.resize(image, (300, 300))
-    x -= (104.0, 117.0, 123.0)
-    x = x.astype(np.float32)
-    x = x[:, :, ::-1].copy()
-    x = torch.from_numpy(x).permute(2, 0, 1)
-    xx = Variable(image.unsqueeze(0))  # wrap tensor in Variable
+    tensor = None
+    if isinstance(image, Image.Image):
+        width = image.width
+        height = image.height
+        tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
+        tensor = tensor.view(height, width, 3).transpose(0, 1).transpose(0, 2).contiguous().cuda()
+        tensor = tensor.view(1, 3, height, width)
+        tensor = tensor.float().div(255.0)
+    elif type(image) == np.ndarray:  # cv2 image
+        tensor = torch.from_numpy(image.transpose(2, 0, 1)).float().div(255.0).unsqueeze(0).cuda()
+    else:
+        print("unknown image type")
+        exit(-1)
     if torch.cuda.is_available():
-        xx = xx.cuda()
-    y = net(xx)
+        tensor = tensor.cuda()
+        print("tensor is set to cuda")
+    print(str(tensor))
+    y = net(tensor)
     detections = y.data
     for i in range(detections.size(1)):
         j = 0
@@ -119,7 +127,7 @@ def load_ssd():
 def main():
     # print("Setting everything up")
     yolov2 = load_yolov2()
-
+    ssd = load_ssd()
     yolov3 = load_yolov3()
 
     test_imgdir = "inria/Test/pos"
@@ -133,6 +141,7 @@ def main():
     batch_size = 1
     max_lab = 14
     img_size = yolov2.height
+    ssd_img_size = ssd.size
 
     patch_size = 300
 
@@ -193,6 +202,9 @@ def main():
                     padded_img.paste(img, (0, int(padding)))
             # resize image to fit into yolo neural net
             resize = transforms.Resize((img_size, img_size))
+            # resize image to fit the ssd neural net
+            ssd_resize = transforms.Resize((ssd_img_size, ssd_img_size))
+            ssd_padded_img = ssd_resize(padded_img)
             padded_img = resize(padded_img)
             cleanname = name + ".png"
             # save this image
@@ -203,10 +215,10 @@ def main():
             yolov2_clean_human_positives += human_positives
             yolov2_clean_object_positives += object_positives
 
-            #human_positives, object_positives = test_results_ssd(cleanname, ssd_model)
-
+            human_positives, object_positives = test_results_ssd(ssd_padded_img, ssd)
             ssd_clean_human_positives += human_positives
             ssd_clean_object_positives += object_positives
+
             human_positives, object_positives = test_results_yolov3(padded_img, yolov3)
             yolov3_clean_human_positives += human_positives
             yolov3_clean_object_positives += object_positives
