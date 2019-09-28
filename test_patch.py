@@ -24,18 +24,16 @@ if module_path not in sys.path:
     sys.path.append(module_path)
 
 
-def test_results_ssd(image):
+def test_results_ssd(image, net):
     human_positives = 0
     total_positives = 0
-    net = build_ssd('test', 300, 21)    # initialize ssd
-    net.load_weights('./implementations/ssd_pytorch/weights/ssd300_mAP_77.43_v2.pth')
     rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    x = cv2.resize(image, (300, 300)).astype(np.float32)
+    x = cv2.resize(image, (300, 300))
     x -= (104.0, 117.0, 123.0)
     x = x.astype(np.float32)
     x = x[:, :, ::-1].copy()
     x = torch.from_numpy(x).permute(2, 0, 1)
-    xx = Variable(x.unsqueeze(0))  # wrap tensor in Variable
+    xx = Variable(image.unsqueeze(0))  # wrap tensor in Variable
     if torch.cuda.is_available():
         xx = xx.cuda()
     y = net(xx)
@@ -74,6 +72,8 @@ if __name__ == '__main__':
     # patchfile = "/home/wvr/Pictures/class_transfer.png"
     savedir = "testing"
 
+    ssd_model = build_ssd('test', 300, 21)    # initialize ssd
+    ssd_model.load_weights('./implementations/ssd_pytorch/weights/ssd300_mAP_77.43_v2.pth')
     darknet_model = Darknet(cfgfile)
     darknet_model.load_weights(weightfile)
     darknet_model = darknet_model.eval().cuda()
@@ -140,7 +140,7 @@ if __name__ == '__main__':
             human_positives, object_positives = test_results_darknet(padded_img, darknet_model)
             clean_human_positives += human_positives
             clean_object_positives += object_positives
-            human_positives, object_positives = test_results_ssd(padded_img)
+            human_positives, object_positives = test_results_ssd(cleanname, ssd_model)
             clean_human_positives += human_positives
             clean_object_positives += object_positives
             '''
