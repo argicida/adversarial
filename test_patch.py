@@ -24,6 +24,10 @@ import cv2
 from implementations.yolov3.models import Darknet as Yolov3
 from implementations.yolov3.utils import utils as yolov3_utils
 
+# Sets default tensor initialization to a float tensor
+if torch.cuda.is_available():
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
 
 def test_results_yolov3(image, net):
     print("yolo3_test")
