@@ -39,7 +39,7 @@ def load_yolov3():
     return yolov3.eval().cuda()
 
 
-class Yolov3_Output_Extractor(nn.module):
+class Yolov3_Output_Extractor(nn.Module):
     def __init__(self, cls_id, num_cls, config):
         super(Yolov3_Output_Extractor, self).__init__()
         self.cls_id = cls_id
@@ -50,7 +50,7 @@ class Yolov3_Output_Extractor(nn.module):
         return
 
     def forward(self, out_batch):
-
+        return
 
 class PatchTrainer(object):
     def __init__(self, mode):
@@ -62,7 +62,7 @@ class PatchTrainer(object):
         self.patch_applier = PatchApplier().cuda()
         self.patch_transformer = PatchTransformer().cuda()
         self.yolov2_output_extractor = Yolov2_Output_Extractor(0, 80, self.config).cuda()
-        self.yolov3_output_extractor = Yolov3_Output_Extractor(0, 80, ).cuda()
+        self.yolov3_output_extractor = Yolov3_Output_Extractor(0, 0, 0).cuda()
         self.non_printability_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
         self.total_variation = TotalVariation().cuda()
         self.saturation_calculator = SaturationCalculator().cuda()
@@ -159,11 +159,9 @@ class PatchTrainer(object):
                     # The given darknet model. Documentation for the original needs to be found and researched
                     output_yolov2 = self.yolov2(p_img_batch)
                     output_yolov3 = self.yolov3(p_img_batch)
-                    print(str(output_yolov3))
-                    print(str(output_yolov3.dim()))
+                    print("output_yolov3.size(): " + str(output_yolov3.size()))
                     max_prob_yolov2 = self.yolov2_output_extractor(output_yolov2)
-                    print("max_prob_yolov2.dim(): " + str(max_prob_yolov2.dim()))
-                    print("max_prob_yolov2: " + str(max_prob_yolov2))
+                    print("max_prob_yolov2.size(): " + str(output_yolov2.size()))
                     max_prob_yolov3 = self.yolov3_output_extractor(output_yolov3)
 
 
@@ -177,12 +175,13 @@ class PatchTrainer(object):
                     patch_saturation_loss = patch_saturation*1
 
                     detection_loss_yolov2 = torch.mean(max_prob_yolov2)
-                    detection_loss_yolov3 = torch.mean(max_prob_yolov3)
+                    # detection_loss_yolov3 = torch.mean(max_prob_yolov3)
 
-                    loss = detection_loss_yolov2 + detection_loss_yolov3\
-                           + printability_loss\
-                           + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())\
-                           + patch_saturation_loss
+                    # loss = detection_loss_yolov2 + detection_loss_yolov3\
+                    loss = detection_loss_yolov2\
+                        + printability_loss\
+                        + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())\
+                        + patch_saturation_loss
                     ep_det_loss += detection_loss_yolov2.detach().cpu().numpy()
                     ep_nps_loss += printability_loss.detach().cpu().numpy()
                     ep_nps_loss = 0
