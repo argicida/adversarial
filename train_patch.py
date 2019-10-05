@@ -45,10 +45,11 @@ class Yolov3_Output_Extractor(nn.module):
         self.cls_id = cls_id
         self.num_cls = num_cls
         self.config = config
+        self.confidence_thresh = 0.5
+        self.nms_thresh = 0.4
         return
 
-    def forward(self):
-        return
+    def forward(self, out_batch):
 
 
 class PatchTrainer(object):
@@ -61,7 +62,7 @@ class PatchTrainer(object):
         self.patch_applier = PatchApplier().cuda()
         self.patch_transformer = PatchTransformer().cuda()
         self.yolov2_output_extractor = Yolov2_Output_Extractor(0, 80, self.config).cuda()
-        self.yolov3_output_extractor = Yolov3_Output_Extractor().cuda()
+        self.yolov3_output_extractor = Yolov3_Output_Extractor(0, 80, ).cuda()
         self.non_printability_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
         self.total_variation = TotalVariation().cuda()
         self.saturation_calculator = SaturationCalculator().cuda()
@@ -161,6 +162,8 @@ class PatchTrainer(object):
                     print(str(output_yolov3))
                     print(str(output_yolov3.dim()))
                     max_prob_yolov2 = self.yolov2_output_extractor(output_yolov2)
+                    print("max_prob_yolov2.dim(): " + str(max_prob_yolov2.dim()))
+                    print("max_prob_yolov2: " + str(max_prob_yolov2))
                     max_prob_yolov3 = self.yolov3_output_extractor(output_yolov3)
 
 
