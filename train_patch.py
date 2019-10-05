@@ -158,8 +158,11 @@ class PatchTrainer(object):
                     # The given darknet model. Documentation for the original needs to be found and researched
                     output_yolov2 = self.yolov2(p_img_batch)
                     output_yolov3 = self.yolov3(p_img_batch)
+                    print(str(output_yolov3))
+                    print(str(output_yolov3.dim()))
                     max_prob_yolov2 = self.yolov2_output_extractor(output_yolov2)
                     max_prob_yolov3 = self.yolov3_output_extractor(output_yolov3)
+
 
                     non_printability_score = self.non_printability_calculator(adv_patch)
                     patch_variation = self.total_variation(adv_patch)
