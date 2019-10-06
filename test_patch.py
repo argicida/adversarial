@@ -16,17 +16,12 @@ import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 import numpy as np
 
-from implementations.ssd_pytorch.ssd import build_ssd
-from implementations.ssd_pytorch.data import VOCDetection, VOC_ROOT, VOCAnnotationTransform
-from implementations.ssd_pytorch.data import VOC_CLASSES as labels
-import cv2
-
 from implementations.yolov3.models import Darknet as Yolov3
 from implementations.yolov3.utils import utils as yolov3_utils
 
+from implementations.ssd.vision.ssd.vgg_ssd import create_vgg_ssd, create_vgg_ssd_predictor
 
 def test_results_yolov3(image, net):
-    print("yolo3_test")
     detection_confidence_threshold = 0.5
     nms_thres = 0.4
     human_positives = 0
@@ -59,12 +54,10 @@ def test_results_yolov3(image, net):
 
 
 def test_results_ssd(image, net):
-    print("ssd_test")
     human_positives = 0
     total_positives = 0
     tensor = None
     if isinstance(image, Image.Image):
-        print("isInstance 1")
         width = image.width
         height = image.height
         tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
@@ -76,21 +69,21 @@ def test_results_ssd(image, net):
     else:
         print("unknown image type")
         exit(-1)
+    tensor[:, 0, :, :] -= 123
+    tensor[:, 1, :, :] -= 117
+    tensor[:, 2, :, :] -= 104
     if torch.cuda.is_available():
         tensor = tensor.cuda()
-    y = net(tensor)
-    detections = y.data
-    for i in range(detections.size(1)):
-        j = 0
-        while detections[0, i, j, 0] >= 0.6:
-            if labels[i-1] == "person":
-                human_positives += 1
-            total_positives += 1
+    boxes, labels, probs = net(tensor)
+    for i in range(len(labels)):
+        clas = labels[i]
+        if clas == 15:
+            human_positives += 1
+    total_positives = len(labels)
     return human_positives, total_positives
 
 
 def test_results_yolov2(image, darknet_model):
-    print("yolo2_test")
     detection_confidence_threshold = 0.5
     nms_threshold = 0.4
     human_box_count = 0
@@ -104,33 +97,37 @@ def test_results_yolov2(image, darknet_model):
     return human_box_count, total_box_count
 
 
-def load_yolov2():
+def load_yolov2(device):
     yolov2_cfgfile = "cfg/yolov2.cfg"
     yolov2_weightfile = "weights/yolov2.weights"
     yolov2 = Darknet(yolov2_cfgfile)
     yolov2.load_weights(yolov2_weightfile)
-    return yolov2.eval().cuda()
+    return yolov2.eval().cuda(device)
 
 
-def load_yolov3():
+def load_yolov3(device):
     yolov3_cfgfile = "./implementations/yolov3/config/yolov3.cfg"
     yolov3_weightfile = "./implementations/yolov3/weights/yolov3.weights"
     yolov3 = Yolov3(yolov3_cfgfile)
     yolov3.load_darknet_weights(yolov3_weightfile)
-    return yolov3.cuda()
+    return yolov3.cuda(device)
 
 
-def load_ssd():
-    ssd_model = build_ssd('test', 300, 21)    # initialize ssd
-    ssd_model.load_weights('./implementations/ssd_pytorch/weights/ssd300_mAP_77.43_v2.pth')
-    return ssd_model.eval().cuda()
+def load_ssd(device):
+    ssd_weightfile = "./implementations/ssd/models/vgg16-ssd-mp-0_7726.pth"
+    ssd = create_vgg_ssd(21, is_test=True)
+    ssd.load(ssd_weightfile)
+    ssd = ssd.to(device)
+    single_image_predictor = create_vgg_ssd_predictor(ssd, device=device)
+    predict_function = single_image_predictor.predict
+    return predict_function
 
 
 def main():
     print("Setting everything up")
-    yolov2 = load_yolov2()
-    ssd = load_ssd()
-    yolov3 = load_yolov3()
+    yolov2 = load_yolov2(0)
+    ssd = load_ssd(0)
+    yolov3 = load_yolov3(0)
 
     test_imgdir = "inria/Test/pos"
     cachedir = "testing"
@@ -143,7 +140,7 @@ def main():
     batch_size = 1
     max_lab = 14
     img_size = yolov2.height
-    ssd_img_size = ssd.size
+    ssd_img_size = 300
 
     patch_size = 300
 
@@ -374,11 +371,11 @@ def main():
     results.write(f'patch to clean human positive ratio: {yolov2_patch_human_positives / yolov2_clean_human_positives}\n')
     results.write(f'noise to clean object positive ratio: {yolov2_noise_object_positives / yolov2_clean_object_positives}\n')
     results.write(f'patch to clean object positive ratio: {yolov2_patch_object_positives / yolov2_clean_object_positives}\n')
-    # results.write('ssd results\n')
-    # results.write(f'noise to clean human positive ratio: {ssd_noise_human_positives / ssd_clean_human_positives}\n')
-    # results.write(f'patch to clean human positive ratio: {ssd_patch_human_positives / ssd_clean_human_positives}\n')
-    # results.write(f'noise to clean object positive ratio: {ssd_noise_object_positives / ssd_clean_object_positives}\n')
-    # results.write(f'patch to clean object positive ratio: {ssd_patch_object_positives / ssd_clean_object_positives}\n')
+    results.write('ssd results\n')
+    results.write(f'noise to clean human positive ratio: {ssd_noise_human_positives / ssd_clean_human_positives}\n')
+    results.write(f'patch to clean human positive ratio: {ssd_patch_human_positives / ssd_clean_human_positives}\n')
+    results.write(f'noise to clean object positive ratio: {ssd_noise_object_positives / ssd_clean_object_positives}\n')
+    results.write(f'patch to clean object positive ratio: {ssd_patch_object_positives / ssd_clean_object_positives}\n')
     results.write('yolov3 results\n')
     results.write(f'noise to clean human positive ratio: {yolov3_noise_human_positives / yolov3_clean_human_positives}\n')
     results.write(f'patch to clean human positive ratio: {yolov3_patch_human_positives / yolov3_clean_human_positives}\n')
