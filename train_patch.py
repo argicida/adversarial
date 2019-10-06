@@ -35,6 +35,8 @@ def load_yolov3():
     yolov3_cfgfile = "./implementations/yolov3/config/yolov3.cfg"
     yolov3_weightfile = "./implementations/yolov3/weights/yolov3.weights"
     yolov3 = Yolov3(yolov3_cfgfile)
+    print("yolov3 module_def: " + str(yolov3.module_defs))
+    print("yolov3 module_list: " + str(yolov3.module_list))
     yolov3.load_darknet_weights(yolov3_weightfile)
     return yolov3.eval().cuda()
 
