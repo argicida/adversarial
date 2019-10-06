@@ -11,6 +11,7 @@ from tqdm import tqdm
 from implementations.yolov3.models import Darknet as Yolov3
 from load_data import *
 # import gc
+from implementations.yolov3.utils import utils as yolov3_utils
 import matplotlib.pyplot as plt
 from torch import autograd
 from torchvision import transforms
@@ -35,8 +36,6 @@ def load_yolov3():
     yolov3_cfgfile = "./implementations/yolov3/config/yolov3.cfg"
     yolov3_weightfile = "./implementations/yolov3/weights/yolov3.weights"
     yolov3 = Yolov3(yolov3_cfgfile)
-    print("yolov3 module_def: " + str(yolov3.module_defs))
-    print("yolov3 module_list: " + str(yolov3.module_list))
     yolov3.load_darknet_weights(yolov3_weightfile)
     return yolov3.eval().cuda()
 
@@ -51,8 +50,11 @@ class Yolov3_Output_Extractor(nn.Module):
         self.nms_thresh = 0.4
         return
 
-    def forward(self, out_batch):
-        return
+    def forward(self, v3_out):
+        with torch.no_grad():
+            outputs = yolov3_utils.non_max_suppression(v3_out)
+       	return outputs
+
 
 class PatchTrainer(object):
     def __init__(self, mode):
@@ -64,7 +66,7 @@ class PatchTrainer(object):
         self.patch_applier = PatchApplier().cuda()
         self.patch_transformer = PatchTransformer().cuda()
         self.yolov2_output_extractor = Yolov2_Output_Extractor(0, 80, self.config).cuda()
-        self.yolov3_output_extractor = Yolov3_Output_Extractor(0, 0, 0).cuda()
+        self.yolov3_output_extractor = Yolov3_Output_Extractor(0, 80, self.config).cuda()
         self.non_printability_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
         self.total_variation = TotalVariation().cuda()
         self.saturation_calculator = SaturationCalculator().cuda()
@@ -161,11 +163,9 @@ class PatchTrainer(object):
                     # The given darknet model. Documentation for the original needs to be found and researched
                     output_yolov2 = self.yolov2(p_img_batch)
                     output_yolov3 = self.yolov3(p_img_batch)
-                    print("output_yolov3.size(): " + str(output_yolov3.size()))
                     max_prob_yolov2 = self.yolov2_output_extractor(output_yolov2)
-                    print("max_prob_yolov2.size(): " + str(output_yolov2.size()))
                     max_prob_yolov3 = self.yolov3_output_extractor(output_yolov3)
-
+                    print("max_prob_yolov3[0].size(): " + str(max_prob_yolov3[0].size()))
 
                     non_printability_score = self.non_printability_calculator(adv_patch)
                     patch_variation = self.total_variation(adv_patch)
