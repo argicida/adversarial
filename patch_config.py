@@ -111,7 +111,7 @@ class ReproducePaperObj(BaseConfig):
     def __init__(self):
         super().__init__()
 
-        self.batch_size = 2
+        self.batch_size = 8
         self.patch_size = 300
 
         self.patch_name = 'ObjectOnlyPaper'
