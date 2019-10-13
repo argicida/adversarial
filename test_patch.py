@@ -117,7 +117,7 @@ def load_ssd(device):
     ssd_weightfile = "./implementations/ssd/models/vgg16-ssd-mp-0_7726.pth"
     ssd = create_vgg_ssd(21, is_test=True)
     ssd.load(ssd_weightfile)
-    ssd = ssd.to(device)
+    ssd = ssd.cuda(device)
     single_image_predictor = create_vgg_ssd_predictor(ssd, device=device)
     predict_function = single_image_predictor.predict
     return predict_function
