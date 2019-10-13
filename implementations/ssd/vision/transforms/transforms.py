@@ -3,7 +3,7 @@
 
 import torch
 from torchvision import transforms
-import cv2
+#import cv2
 import numpy as np
 import types
 from numpy import random
@@ -109,8 +109,8 @@ class Resize(object):
         self.size = size
 
     def __call__(self, image, boxes=None, labels=None):
-        image = cv2.resize(image, (self.size,
-                                 self.size))
+        #image = cv2.resize(image, (self.size,
+        #                         self.size))
         return image, boxes, labels
 
 
@@ -161,18 +161,18 @@ class ConvertColor(object):
         self.current = current
 
     def __call__(self, image, boxes=None, labels=None):
-        if self.current == 'BGR' and self.transform == 'HSV':
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        elif self.current == 'RGB' and self.transform == 'HSV':
-            image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-        elif self.current == 'BGR' and self.transform == 'RGB':
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        elif self.current == 'HSV' and self.transform == 'BGR':
-            image = cv2.cvtColor(image, cv2.COLOR_HSV2BGR)
-        elif self.current == 'HSV' and self.transform == "RGB":
-            image = cv2.cvtColor(image, cv2.COLOR_HSV2RGB)
-        else:
-            raise NotImplementedError
+        #if self.current == 'BGR' and self.transform == 'HSV':
+        #    image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        #elif self.current == 'RGB' and self.transform == 'HSV':
+        #    image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+        #elif self.current == 'BGR' and self.transform == 'RGB':
+        #    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        #elif self.current == 'HSV' and self.transform == 'BGR':
+        #    image = cv2.cvtColor(image, cv2.COLOR_HSV2BGR)
+        #elif self.current == 'HSV' and self.transform == "RGB":
+        #    image = cv2.cvtColor(image, cv2.COLOR_HSV2RGB)
+        #else:
+        #    raise NotImplementedError
         return image, boxes, labels
 
 

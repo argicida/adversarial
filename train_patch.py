@@ -120,7 +120,7 @@ class PatchTrainer(object):
         # Initialize some settings
         img_size = 608 # dataloader configured with dimensions from yolov2
         batch_size = self.config.batch_size
-        n_epochs = 1000
+        n_epochs = 200
         max_lab = 14
 
         time_str = time.strftime("%Y%m%d-%H%M%S")
