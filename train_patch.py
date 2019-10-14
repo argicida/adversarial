@@ -120,7 +120,7 @@ class PatchTrainer(object):
         # Initialize some settings
         img_size = 608 # dataloader configured with dimensions from yolov2
         batch_size = self.config.batch_size
-        n_epochs = 200
+        n_epochs = 2000
         max_lab = 14
 
         time_str = time.strftime("%Y%m%d-%H%M%S")
@@ -218,7 +218,7 @@ class PatchTrainer(object):
                     detection_loss_ssd = torch.mean(max_prob_ssd)
 
                     #detectino_loss = detection_loss_yolov2 + detection_loss_yolov3 + detection_loss_ssd
-                    detection_loss = detection_loss_ssd
+                    detection_loss = detection_loss_ssd * 10000
                     loss = detection_loss\
                         + printability_loss\
                         + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())#\
@@ -245,6 +245,9 @@ class PatchTrainer(object):
 
                         # Writes all this data to the object's tensorboard item, which was initialized as 'writer'
                         self.writer.add_scalar('total_loss', loss.detach().cpu().numpy(), iteration)
+                        #self.writer.add_scalar('loss/YOLOv2_loss', detection_loss_yolov2.detach().cpu().numpy(), iteration)
+                        #self.writer.add_scalar('loss/YOLOv3_loss', detection_loss_yolov3.detach().cpu().numpy(), iteration)
+                        self.writer.add_scalar('loss/SSD_loss', detection_loss_ssd.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/det_loss', detection_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/tv_loss', patch_variation_loss.detach().cpu().numpy(), iteration)

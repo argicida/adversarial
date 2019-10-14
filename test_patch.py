@@ -132,7 +132,7 @@ def main():
     test_imgdir = "inria/Test/pos"
     cachedir = "testing"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
-    patchfile = "saved_patches/perry_08-26_500_epochs.jpg"
+    patchfile = "saved_patches/perry_10-14_200_epochs_ssd_saturation_loss.jpg"
 
     patch_applier = PatchApplier().cuda()
     patch_transformer = PatchTransformer().cuda()
@@ -297,9 +297,12 @@ def main():
             human_positives, object_positives = test_results_yolov2(p_img_pil, yolov2)
             yolov2_patch_human_positives += human_positives
             yolov2_patch_object_positives += object_positives
-            #human_positives, object_positives = test_results_ssd(p_img_pil)
+            
+            ssd_patched_img_pillow = ssd_resize(p_img_pil)
+            human_positives, object_positives = test_results_ssd(ssd_patched_img_pillow, ssd)
             ssd_patch_human_positives += human_positives
             ssd_patch_object_positives += object_positives
+            
             human_positives, object_positives = test_results_yolov3(p_img_pil, yolov3)
             yolov3_patch_human_positives += human_positives
             yolov3_patch_object_positives += object_positives
@@ -334,9 +337,12 @@ def main():
             human_positives, object_positives = test_results_yolov2(p_img_pil, yolov2)
             yolov2_noise_human_positives += human_positives
             yolov2_noise_object_positives += object_positives
-            #human_positives, object_positives = test_results_ssd(p_img_pil)
+            
+            ssd_patched_img_pillow = ssd_resize(p_img_pil)
+            human_positives, object_positives = test_results_ssd(ssd_patched_img_pillow, ssd)
             ssd_noise_human_positives += human_positives
             ssd_noise_object_positives += object_positives
+            
             human_positives, object_positives = test_results_yolov3(p_img_pil, yolov3)
             yolov3_noise_human_positives += human_positives
             yolov3_noise_object_positives += object_positives
