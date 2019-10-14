@@ -206,12 +206,12 @@ class PatchTrainer(object):
 
                     non_printability_score = self.non_printability_calculator(adv_patch)
                     patch_variation = self.total_variation(adv_patch)
-                    patch_saturation = self.saturation_calculator(adv_patch)
+                    #patch_saturation = self.saturation_calculator(adv_patch)
 
                     # Calculates the loss in the new patch, then mashes them all together
                     printability_loss = non_printability_score*0.01
                     patch_variation_loss = patch_variation*2.5
-                    patch_saturation_loss = patch_saturation*1
+                    #patch_saturation_loss = patch_saturation*1
 
                     #detection_loss_yolov2 = torch.mean(max_prob_yolov2)
                     #detection_loss_yolov3 = torch.mean(max_prob_yolov3)
@@ -221,8 +221,8 @@ class PatchTrainer(object):
                     detection_loss = detection_loss_ssd
                     loss = detection_loss\
                         + printability_loss\
-                        + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())\
-                        + patch_saturation_loss
+                        + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())#\
+                        #+ patch_saturation_loss
                     ep_det_loss += detection_loss.detach().cpu().numpy()
                     ep_nps_loss += printability_loss.detach().cpu().numpy()
                     ep_tv_loss += patch_variation_loss.detach().cpu().numpy()
