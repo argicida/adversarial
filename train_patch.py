@@ -219,7 +219,7 @@ class PatchTrainer(object):
                     detection_loss_ssd = torch.mean(max_prob_ssd)
 
                     #detectino_loss = detection_loss_yolov2 + detection_loss_yolov3 + detection_loss_ssd
-                    detection_loss = detection_loss_ssd * 0.001
+                    detection_loss = detection_loss_ssd * 1
                     loss = detection_loss\
                         + printability_loss\
                         + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())#\
