@@ -80,9 +80,8 @@ class SSD_Output_Extractor(nn.Module):
         # dim locations: batch, num_priors, 4
         confidence, locations = ssd_out
         relevant_confidence = confidence[:, :, self.cls_id]
-        max_confidence, indices = torch.max(relevant_confidence, dim=1)
-        # gets conf score 4 the most likely human prediction for each image
-        return max_confidence
+        mean_confidence = torch.mean(relevant_confidence, dim=1)
+        return mean_confidence
 
 
 class PatchTrainer(object):
@@ -120,7 +119,7 @@ class PatchTrainer(object):
         # Initialize some settings
         img_size = 608 # dataloader configured with dimensions from yolov2
         batch_size = self.config.batch_size
-        n_epochs = 2000
+        n_epochs = 500
         max_lab = 14
 
         time_str = time.strftime("%Y%m%d-%H%M%S")
