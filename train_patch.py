@@ -80,8 +80,10 @@ class SSD_Output_Extractor(nn.Module):
         # dim locations: batch, num_priors, 4
         confidence, locations = ssd_out
         relevant_confidence = confidence[:, :, self.cls_id]
-        mean_confidence = torch.mean(relevant_confidence, dim=1)
-        return mean_confidence
+        #mean_confidence = torch.mean(relevant_confidence, dim=1)
+        #return mean_confidence
+        max_confidence, _ = torch.max(relevant_confidence, dim=1)
+        return max_confidence
 
 
 class PatchTrainer(object):
