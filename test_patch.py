@@ -132,7 +132,7 @@ def main():
     test_imgdir = "inria/Test/pos"
     cachedir = "testing"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
-    patchfile = "saved_patches/patch_2019-10-14_13-52-43-2000_epochs.jpg"
+    patchfile = "saved_patches/patch_2019-10-16_00-06-52-2000_epochs.jpg"
 
     patch_applier = PatchApplier().cuda()
     patch_transformer = PatchTransformer().cuda()
@@ -373,18 +373,24 @@ def main():
     results = open('test_results.txt', 'w+')
     results.write(patchfile)
     results.write('\nyolov2 results\n')
+    results.write(f'clean total human positives: {yolov2_clean_human_positives}\n')
     results.write(f'noise to clean human positive ratio: {yolov2_noise_human_positives / yolov2_clean_human_positives}\n')
     results.write(f'patch to clean human positive ratio: {yolov2_patch_human_positives / yolov2_clean_human_positives}\n')
+    results.write(f'clean total object positives: {yolov2_clean_object_positives}\n')
     results.write(f'noise to clean object positive ratio: {yolov2_noise_object_positives / yolov2_clean_object_positives}\n')
     results.write(f'patch to clean object positive ratio: {yolov2_patch_object_positives / yolov2_clean_object_positives}\n')
     results.write('ssd results\n')
+    results.write(f'clean total human positives: {ssd_clean_human_positives}\n')
     results.write(f'noise to clean human positive ratio: {ssd_noise_human_positives / ssd_clean_human_positives}\n')
     results.write(f'patch to clean human positive ratio: {ssd_patch_human_positives / ssd_clean_human_positives}\n')
+    results.write(f'clean total object positives: {ssd_clean_object_positives}\n')
     results.write(f'noise to clean object positive ratio: {ssd_noise_object_positives / ssd_clean_object_positives}\n')
     results.write(f'patch to clean object positive ratio: {ssd_patch_object_positives / ssd_clean_object_positives}\n')
     results.write('yolov3 results\n')
+    results.write(f'clean total human positives: {yolov3_clean_human_positives}\n')
     results.write(f'noise to clean human positive ratio: {yolov3_noise_human_positives / yolov3_clean_human_positives}\n')
     results.write(f'patch to clean human positive ratio: {yolov3_patch_human_positives / yolov3_clean_human_positives}\n')
+    results.write(f'clean total object positives: {yolov3_clean_object_positives}\n')
     results.write(f'noise to clean object positive ratio: {yolov3_noise_object_positives / yolov3_clean_object_positives}\n')
     results.write(f'patch to clean object positive ratio: {yolov3_patch_object_positives / yolov3_clean_object_positives}\n')
     results.close()
