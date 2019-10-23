@@ -221,8 +221,8 @@ class PatchTrainer(object):
                     #detectino_loss = detection_loss_yolov2 + detection_loss_yolov3 + detection_loss_ssd
                     detection_loss = detection_loss_ssd * 1
                     loss = detection_loss\
-                        + printability_loss\
-                        + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())#\
+                        #+ printability_loss\
+                        #+ torch.max(patch_variation_loss, torch.tensor(0.1).cuda())#\
                         #+ patch_saturation_loss
                     ep_det_loss += detection_loss.detach().cpu().numpy()
                     ep_nps_loss += printability_loss.detach().cpu().numpy()
@@ -231,6 +231,8 @@ class PatchTrainer(object):
 
                     # Calculates the gradient of the loss function
                     loss.backward()
+                    # for debugging backprop of target losses
+                    mean_absolute_gradient = torch.mean(torch.abs(adv_patch_cpu.grad))
 
                     # Performs one step in optimization of the patch
                     optimizer.step()
@@ -254,6 +256,7 @@ class PatchTrainer(object):
                         self.writer.add_scalar('loss/tv_loss', patch_variation_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('misc/epoch', epoch, iteration)
                         self.writer.add_scalar('misc/learning_rate', optimizer.param_groups[0]["lr"], iteration)
+                        self.writer.add_scalar("misc/mean_absolute_gradient", mean_absolute_gradient.detach().cpu().numpy(), iteration)
 
                         # Saves the current to argicida/patches
                         self.writer.add_image('patch', adv_patch_cpu, iteration)
