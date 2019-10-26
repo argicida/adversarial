@@ -16,6 +16,7 @@ from implementations.ssd.vision.ssd.vgg_ssd import create_vgg_ssd
 from load_data import *
 # import gc
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from torch import autograd
 from torchvision import transforms
 from tensorboardX import SummaryWriter
@@ -25,6 +26,31 @@ import patch_config
 import sys
 import time
 # import datetime
+
+
+class Patch(nn.Module):
+    def __init__(self, patch_size, typ="grey", tanh=True):
+        super(Patch, self).__init__()
+        if typ == 'grey':
+            # when params are 0. the rgbs are 0.5
+            self.params = nn.Parameter(torch.full((3, patch_size, patch_size), 0))
+        elif typ == 'random':
+            # uniform distribution range from -2 to -2
+            self.params = nn.Parameter((torch.rand((3, patch_size, patch_size))*2 - 1) * 2)
+        # both options force the patch to have valid rgb values
+        if tanh:
+            self.constraint = self.tanh_constraint
+        else:
+            self.constraint = self.sigmoid_constraint
+
+    def tanh_constraint(self, params):
+        return 0.5 * (torch.tanh(params) + 1)
+
+    def sigmoid_constraint(self, params):
+        return torch.sigmoid(params)
+
+    def forward(self):
+        return self.constraint(self.params)
 
 
 def load_yolov2(device=0):
@@ -53,6 +79,35 @@ def load_ssd(device=0):
     return ssd.eval().cuda(device)
 
 
+def plot_grad_flow(named_parameters):
+    '''Plots the gradients flowing through different layers in the net during training.
+    Can be used for checking for possible gradient vanishing / exploding problems.
+
+    Usage: Plug this function in Trainer class after loss.backwards() as
+    "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
+    ave_grads = []
+    max_grads = []
+    layers = []
+    for n, p in named_parameters:
+        if (p.requires_grad) and ("bias" not in n):
+            layers.append(n)
+            ave_grads.append(p.grad.abs().mean())
+            max_grads.append(p.grad.abs().max())
+    plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
+    plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
+    plt.hlines(0, 0, len(ave_grads) + 1, lw=2, color="k")
+    plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
+    plt.xlim(left=0, right=len(ave_grads))
+    plt.ylim(bottom=-0.001, top=0.02)  # zoom in on the lower gradient regions
+    plt.xlabel("Layers")
+    plt.ylabel("average gradient")
+    plt.title("Gradient flow")
+    plt.grid(True)
+    plt.legend([Line2D([0], [0], color="c", lw=4),
+                Line2D([0], [0], color="b", lw=4),
+                Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
+
+
 class Yolov3_Output_Extractor(nn.Module):
     def __init__(self, cls_id, num_cls, config):
         super(Yolov3_Output_Extractor, self).__init__()
@@ -79,11 +134,27 @@ class SSD_Output_Extractor(nn.Module):
         # dim confidence: batch, num_priors, num_classes
         # dim locations: batch, num_priors, 4
         confidence, locations = ssd_out
-        relevant_confidence = confidence[:, :, self.cls_id]
+
+        ### following approaches only extract human confidence logits
+        #relevant_confidence = confidence[:, :, self.cls_id]
         #mean_confidence = torch.mean(relevant_confidence, dim=1)
         #return mean_confidence
-        max_confidence, _ = torch.max(relevant_confidence, dim=1)
-        return max_confidence
+        #max_confidence, _ = torch.max(relevant_confidence, dim=1)
+        #return max_confidence
+        #return torch.sum(relevant_confidence, dim=1)
+
+        ### following approach extract the margin between human and other classes
+        ### then run a targeted attack that minimizes the margin between human and nearest class logits
+        # dim total confidence: batch, num_classes
+        class_total_confidences = torch.sum(confidence, dim=1)
+        num_classes = class_total_confidences.shape[-1]
+        non_target_mask = np.ones(num_classes, dtype=bool)
+        non_target_mask[self.cls_id] = False
+        # dim nearest_targets: batch, 1
+        nearest_targets, _ = torch.max(class_total_confidences[:,non_target_mask], dim=1)
+        # dim human_total_confidences: batch, 1
+        human_total_confidences = class_total_confidences[:, self.cls_id]
+        return human_total_confidences - nearest_targets
 
 
 class PatchTrainer(object):
@@ -127,11 +198,9 @@ class PatchTrainer(object):
         time_str = time.strftime("%Y%m%d-%H%M%S")
 
         # Generate stating point
-        adv_patch_cpu = self.generate_patch("gray")
+        patch_module = Patch(patch_size=self.config.patch_size, typ=self.config.start_patch, tanh=True).cuda()
         # adv_patch_cpu = self.read_image("saved_patches/patchnew0.jpg")
 
-        # Sets the patch tensor to have a gradient always, allowing the backward function
-        adv_patch_cpu.requires_grad_(True)
 
         # Sets up training and determines how long the training length will be
         train_loader = torch.utils.data.DataLoader(InriaDataset(self.config.img_dir, self.config.lab_dir, max_lab, img_size,
@@ -145,19 +214,22 @@ class PatchTrainer(object):
         print(f'One epoch is {len(train_loader)}')
 
         # Creates the object which will optimize the patch, and sets the learning rate
-        optimizer = optim.Adam([adv_patch_cpu], lr=self.config.start_learning_rate, amsgrad=True)
+        optimizer = optim.Adam(patch_module.parameters(), lr=self.config.start_learning_rate, weight_decay=self.config.decay, amsgrad=True)
 
         # Schedules tasks on the gpu to optimize performance
         scheduler = self.config.scheduler_factory(optimizer)
 
         et0 = time.time()
         for epoch in range(n_epochs):
-
+        #for epoch in range(1):
             # Sets the gradient inputs to zero
             ep_det_loss = 0
             ep_nps_loss = 0
             ep_tv_loss = 0
             ep_loss = 0
+            ep_ssd_loss = 0
+            #ep_yolov2_loss = 0
+            #ep_yolov3_loss = 0
             bt0 = time.time()
 
             # I have no fucking clue how long this is supposed to be running, probably for the epoch length? Needs
@@ -171,7 +243,7 @@ class PatchTrainer(object):
                     img_batch = img_batch.cuda()
                     lab_batch = lab_batch.cuda()
                     # print('TRAINING EPOCH %i, BATCH %i'%(epoch, i_batch))
-                    adv_patch = adv_patch_cpu.cuda()
+                    adv_patch = patch_module()
 
                     # Creates a patch transformer with a default grey patch. Can't find this object anywhere but most
                     # Likely it allows the patch to be moved around on inputted images.
@@ -220,46 +292,53 @@ class PatchTrainer(object):
 
                     #detectino_loss = detection_loss_yolov2 + detection_loss_yolov3 + detection_loss_ssd
                     detection_loss = detection_loss_ssd * 1
-                    loss = detection_loss\
-                        #+ printability_loss\
-                        #+ torch.max(patch_variation_loss, torch.tensor(0.1).cuda())#\
-                        #+ patch_saturation_loss
+                    loss = 0
+                    loss += detection_loss
+                    #loss += printability_loss
+                    #loss += torch.max(patch_variation_loss, torch.tensor(0.1).cuda())
+                    #loss += patch_saturation_loss
+
+                    # for debugging purposes
                     ep_det_loss += detection_loss.detach().cpu().numpy()
                     ep_nps_loss += printability_loss.detach().cpu().numpy()
                     ep_tv_loss += patch_variation_loss.detach().cpu().numpy()
-                    ep_loss += loss
+                    ep_ssd_loss += detection_loss_ssd.detach().cpu().numpy()
+                    #ep_yolov2_loss += detection_loss_yolov2.detach().cpu().numpy()
+                    #ep_yolov3_loss += detection_loss_yolov3.detach().cpu().numpy()
+                    ep_loss += loss.detach().cpu().numpy()
 
                     # Calculates the gradient of the loss function
                     loss.backward()
+
+                    #plot_grad_flow([("adv_patch_cpu",adv_patch_cpu)])
+                    #plt.show()
+
                     # for debugging backprop of target losses
-                    mean_absolute_gradient = torch.mean(torch.abs(adv_patch_cpu.grad))
+                    mean_absolute_gradient = torch.mean(torch.abs(patch_module.params.grad))
+                    max_absolute_gradient = torch.max(torch.abs(patch_module.params.grad))
 
                     # Performs one step in optimization of the patch
                     optimizer.step()
 
                     # Clears all gradients after each step. Default is to accumulate them, we don't want that
                     optimizer.zero_grad()
-                    adv_patch_cpu.data.clamp_(0,1)       # keep patch in image range
+                    #adv_patch_cpu.data.clamp_(0,1)       # keep patch in image range # not needed due to patch module
 
                     bt1 = time.time()
-                    # Updates the iterations in batches of 5 and writes down new data
-                    if i_batch%5 == 0:
-                        iteration = self.epoch_length * epoch + i_batch
+                    iteration = self.epoch_length * epoch + i_batch
 
-                        # Writes all this data to the object's tensorboard item, which was initialized as 'writer'
-                        self.writer.add_scalar('total_loss', loss.detach().cpu().numpy(), iteration)
-                        #self.writer.add_scalar('loss/YOLOv2_loss', detection_loss_yolov2.detach().cpu().numpy(), iteration)
-                        #self.writer.add_scalar('loss/YOLOv3_loss', detection_loss_yolov3.detach().cpu().numpy(), iteration)
-                        self.writer.add_scalar('loss/SSD_loss', detection_loss_ssd.detach().cpu().numpy(), iteration)
-                        self.writer.add_scalar('loss/det_loss', detection_loss.detach().cpu().numpy(), iteration)
-                        self.writer.add_scalar('loss/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
-                        self.writer.add_scalar('loss/tv_loss', patch_variation_loss.detach().cpu().numpy(), iteration)
-                        self.writer.add_scalar('misc/epoch', epoch, iteration)
-                        self.writer.add_scalar('misc/learning_rate', optimizer.param_groups[0]["lr"], iteration)
-                        self.writer.add_scalar("misc/mean_absolute_gradient", mean_absolute_gradient.detach().cpu().numpy(), iteration)
-
-                        # Saves the current to argicida/patches
-                        self.writer.add_image('patch', adv_patch_cpu, iteration)
+                    # Writes all this data to the object's tensorboard item, which was initialized as 'writer'
+                    self.writer.add_scalar('batch/total_loss', loss.detach().cpu().numpy(), iteration)
+                    self.writer.add_scalar('batch/total_det_loss', detection_loss.detach().cpu().numpy(), iteration)
+                    #self.writer.add_scalar('batch/YOLOv2_loss', detection_loss_yolov2.detach().cpu().numpy(), iteration)
+                    #self.writer.add_scalar('batch/YOLOv3_loss', detection_loss_yolov3.detach().cpu().numpy(), iteration)
+                    self.writer.add_scalar('batch/SSD_loss', detection_loss_ssd.detach().cpu().numpy(), iteration)
+                    self.writer.add_scalar('batch/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
+                    self.writer.add_scalar('batch/tv_loss', patch_variation_loss.detach().cpu().numpy(), iteration)
+                    self.writer.add_scalar('batch/epoch', epoch, iteration)
+                    self.writer.add_scalar('batch/learning_rate', optimizer.param_groups[0]["lr"], iteration)
+                    self.writer.add_scalar("batch/mean_absolute_gradient", mean_absolute_gradient.detach().cpu().numpy(), iteration)
+                    self.writer.add_scalar("batch/max_absolute_gradient", max_absolute_gradient.detach().cpu().numpy(), iteration)
 
                     # If the training is over, add an endline character, else clearn the following variables
                     if i_batch + 1 >= len(train_loader):
@@ -275,43 +354,40 @@ class PatchTrainer(object):
             ep_nps_loss = ep_nps_loss/len(train_loader)
             ep_tv_loss = ep_tv_loss/len(train_loader)
             ep_loss = ep_loss/len(train_loader)
+            #ep_yolov2_loss = ep_yolov2_loss/len(train_loader)
+            #ep_yolov3_loss = ep_yolov3_loss/len(train_loader)
+            ep_ssd_loss = ep_ssd_loss/len(train_loader)
+            self.writer.add_scalar('loss/total_loss', ep_loss, epoch)
+            self.writer.add_scalar('loss/total_det_loss', ep_det_loss, epoch)
+            # self.writer.add_scalar('loss/YOLOv2_loss', ep_yolov2_loss, epoch)
+            # self.writer.add_scalar('loss/YOLOv3_loss', ep_yolov3_loss, epoch)
+            self.writer.add_scalar('loss/SSD_loss', ep_ssd_loss, epoch)
+            self.writer.add_scalar('loss/printability_loss', ep_nps_loss, epoch)
+            self.writer.add_scalar('loss/tv_loss',ep_tv_loss, epoch)
 
             # im = transforms.ToPILImage('RGB')(adv_patch_cpu)
             # plt.imshow(im)
             # plt.savefig(f'pics/{time_str}_{self.config.patch_name}_{epoch}.png')
             # Output statistics and training time
             scheduler.step(ep_loss)
-            if True:
-                print('  EPOCH NR: ', epoch),
-                print('EPOCH LOSS: ', ep_loss)
-                print('  DET LOSS: ', ep_det_loss)
-                print('  NPS LOSS: ', ep_nps_loss)
-                print('   TV LOSS: ', ep_tv_loss)
-                print('EPOCH TIME: ', et1-et0)
-                #del adv_batch_t, output_yolov2, max_prob_yolov2, detection_loss_yolov2, p_img_batch, printability_loss, patch_variation_loss, loss
-                #torch.cuda.empty_cache()
+            print('  EPOCH NR: ', epoch),
+            print('EPOCH LOSS: ', ep_loss)
+            print('  DET LOSS: ', ep_det_loss)
+            print('  NPS LOSS: ', ep_nps_loss)
+            print('   TV LOSS: ', ep_tv_loss)
+            print('EPOCH TIME: ', et1-et0)
+            #del adv_batch_t, output_yolov2, max_prob_yolov2, detection_loss_yolov2, p_img_batch, printability_loss, patch_variation_loss, loss
+            #torch.cuda.empty_cache()
+            self.writer.add_image('patch', adv_patch.detach().cpu().numpy(), epoch)
+
             et0 = time.time()
 
         # At the end of training, save image
-        im = transforms.ToPILImage('RGB')(adv_patch_cpu)
+        im = transforms.ToPILImage('RGB')(adv_patch.cpu())
         plt.imshow(im)
         plt.show()
         # Specifies file to save trained patch to
         im.save("saved_patches/patch_" + time.strftime("%Y-%m-%d_%H-%M-%S") + "-" + str(n_epochs) + "_epochs.jpg")
-
-    def generate_patch(self, type):
-        """
-        Generate a random patch as a starting point for optimization.
-
-        :param type: Can be 'gray' or 'random'. Whether or not generate a gray or a random patch.
-        :return:
-        """
-        if type == 'gray':
-            adv_patch_cpu = torch.full((3, self.config.patch_size, self.config.patch_size), 0.5)
-        elif type == 'random':
-            adv_patch_cpu = torch.rand((3, self.config.patch_size, self.config.patch_size))
-
-        return adv_patch_cpu
 
     def read_image(self, path):
         """

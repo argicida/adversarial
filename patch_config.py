@@ -14,9 +14,12 @@ class BaseConfig(object):
         self.lab_dir = "inria/Train/pos/yolo-labels"
         self.printfile = "non_printability/30values.txt"
         self.patch_size = 300
-
-        self.start_learning_rate = 0.03
-
+        self.start_learning_rate = 0.03 # used by dutch for yolov2
+        #self.start_learning_rate = 0.003
+        self.decay = 0 # used by dutch for yolov2
+        #self.decay = 1e-3
+        self.start_patch = 'grey'
+        #self.start_patch = 'random'
         self.patch_name = 'base'
 
         self.scheduler_factory = lambda x: optim.lr_scheduler.ReduceLROnPlateau(x, 'min', patience=50)
@@ -111,7 +114,7 @@ class ReproducePaperObj(BaseConfig):
     def __init__(self):
         super().__init__()
 
-        self.batch_size = 8
+        self.batch_size = 6
         self.patch_size = 300
 
         self.patch_name = 'ObjectOnlyPaper'
