@@ -63,9 +63,9 @@ def test_results_ssd(image, net):
         tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
         tensor = tensor.view(height, width, 3).transpose(0, 1).transpose(0, 2).contiguous().cuda()
         tensor = tensor.view(1, 3, height, width)
-        tensor = tensor.float().div(255.0).cuda()
+        tensor = tensor.float().cuda()
     elif type(image) == np.ndarray:  # cv2 image
-        tensor = torch.from_numpy(image.transpose(2, 0, 1)).float().div(255.0).unsqueeze(0).cuda()
+        tensor = torch.from_numpy(image.transpose(2, 0, 1)).float().unsqueeze(0).cuda()
     else:
         print("unknown image type")
         exit(-1)
@@ -202,9 +202,9 @@ def main():
             # resize image to fit into yolo neural net
             resize = transforms.Resize((img_size, img_size))
             # resize image to fit the ssd neural net
+            padded_img = resize(padded_img)
             ssd_resize = transforms.Resize((ssd_img_size, ssd_img_size))
             ssd_padded_img = ssd_resize(padded_img)
-            padded_img = resize(padded_img)
             cleanname = name + ".png"
             # save this image
             # padded_img.save(os.path.join(savedir, 'clean/', cleanname))
