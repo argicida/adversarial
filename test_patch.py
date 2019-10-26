@@ -132,7 +132,7 @@ def main():
     test_imgdir = "inria/Test/pos"
     cachedir = "testing"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
-    patchfile = "saved_patches/perry_2019-10-26_07-45-00-500_epochs_ssd_sum_margin.jpg"
+    patchfile = "saved_patches/patch_2019-10-26_13-29-29-500_epochs.jpg"
 
     patch_applier = PatchApplier().cuda()
     patch_transformer = PatchTransformer().cuda()
