@@ -145,9 +145,9 @@ class SSD_Output_Extractor(nn.Module):
 
         ### following approaches extract the margin between human and other classes
         ### then run a targeted attack that minimizes the margin between human and nearest class logits
-        #num_classes = confidence.shape[-1]
-        #possible_targets_mask = np.ones(num_classes, dtype=bool)
-        #possible_targets_mask[self.cls_id] = False
+        num_classes = confidence.shape[-1]
+        possible_targets_mask = np.ones(num_classes, dtype=bool)
+        possible_targets_mask[self.cls_id] = False
         # dim total confidence: batch, num_classes
         #class_total_confidences = torch.sum(confidence, dim=1)
         # dim nearest_targets: batch, 1
@@ -155,25 +155,25 @@ class SSD_Output_Extractor(nn.Module):
         # dim human_total_confidences: batch, 1
         #human_total_confidences = class_total_confidences[:, self.cls_id]
         #return human_total_confidences - nearest_targets
-        #human_confidences = confidence[:, :, self.cls_id]
-        #possible_target_confidences = confidence[:, :, possible_targets_mask]
-        #target_confidences, _ = torch.max(possible_target_confidences, dim=2)
+        human_confidences = confidence[:, :, self.cls_id]
+        possible_target_confidences = confidence[:, :, possible_targets_mask]
+        target_confidences, _ = torch.max(possible_target_confidences, dim=2)
         # dim margins: batch, num_priors
         # stops optimizing as soon as another class has bigger logits by magnitude of m
-        #m = 500
-        #margins = F.relu(human_confidences - target_confidences + m)
+        m = 5
+        margins = F.relu(human_confidences - target_confidences + m)
         #margins = human_confidences - target_confidences
-        #return torch.sum(margins, dim=1)
+        return torch.sum(margins, dim=1)
 
 
         ### following approach uses cross entropy on human confidences
         # dim: batch, num_priors
-        human_logits = confidence[:, :, self.cls_id]
-        zeros = torch.zeros(human_logits.shape).cuda()
-        loss_fun = torch.nn.BCEWithLogitsLoss(reduction='none').cuda()
+        #human_logits = confidence[:, :, self.cls_id]
+        #zeros = torch.zeros(human_logits.shape).cuda()
+        #loss_fun = torch.nn.BCEWithLogitsLoss(reduction='none').cuda()
         # dim: batch, num_priors
-        loss = loss_fun(human_logits, zeros)
-        return torch.sum(loss, dim=1)
+        #loss = loss_fun(human_logits, zeros)
+        #return torch.sum(loss, dim=1)
 
 
 class PatchTrainer(object):
@@ -274,8 +274,8 @@ class PatchTrainer(object):
                     # TODO: note from Perry: which object? patch_applier is from this file, F is torch.nn.functional
                     p_img_batch = self.patch_applier(img_batch, adv_batch_t)
                     #p_img_batch = F.interpolate(p_img_batch, (self.yolov2.height, self.yolov2.width))
-
                     ssd_p_img_batch = F.interpolate(p_img_batch, (300, 300))
+                    ssd_p_img_batch = ssd_p_img_batch * 255 # "de"-normalize
                     ssd_p_img_batch[:, 0, :, :] -= 123
                     ssd_p_img_batch[:, 1, :, :] -= 117
                     ssd_p_img_batch[:, 2, :, :] -= 104
