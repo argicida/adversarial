@@ -135,6 +135,12 @@ class SSD_Output_Extractor(nn.Module):
         # dim locations: batch, num_priors, 4
         confidence, locations = ssd_out
 
+        ### following approach minimize all confidences at human detections
+        confidence_scores = F.softmax(confidence, dim=2)
+        relevant_human_mask = (confidence_scores[:, :, self.cls_id] > 0.1).float()
+        relevant_confidence = confidence * relevant_human_mask.unsqueeze(-1)
+        return torch.sum(relevant_confidence)
+
         ### following approaches only extract human confidence logits
         #relevant_confidence = confidence[:, :, self.cls_id]
         #mean_confidence = torch.mean(relevant_confidence, dim=1)
@@ -145,9 +151,9 @@ class SSD_Output_Extractor(nn.Module):
 
         ### following approaches extract the margin between human and other classes
         ### then run a targeted attack that minimizes the margin between human and nearest class logits
-        num_classes = confidence.shape[-1]
-        possible_targets_mask = np.ones(num_classes, dtype=bool)
-        possible_targets_mask[self.cls_id] = False
+        # num_classes = confidence.shape[-1]
+        # possible_targets_mask = np.ones(num_classes, dtype=bool)
+        # possible_targets_mask[self.cls_id] = False
         # dim total confidence: batch, num_classes
         #class_total_confidences = torch.sum(confidence, dim=1)
         # dim nearest_targets: batch, 1
@@ -155,15 +161,18 @@ class SSD_Output_Extractor(nn.Module):
         # dim human_total_confidences: batch, 1
         #human_total_confidences = class_total_confidences[:, self.cls_id]
         #return human_total_confidences - nearest_targets
-        human_confidences = confidence[:, :, self.cls_id]
-        possible_target_confidences = confidence[:, :, possible_targets_mask]
-        target_confidences, _ = torch.max(possible_target_confidences, dim=2)
+        # human_confidences = confidence[:, :, self.cls_id]
+        # possible_target_confidences = confidence[:, :, possible_targets_mask]
+        # target_confidences, _ = torch.max(possible_target_confidences, dim=2)
         # dim margins: batch, num_priors
         # stops optimizing as soon as another class has bigger logits by magnitude of m
-        m = 5
-        margins = F.relu(human_confidences - target_confidences + m)
-        #margins = human_confidences - target_confidences
-        return torch.sum(margins, dim=1)
+        #m = 5
+        #margins = F.relu(human_confidences - target_confidences + m)
+        # margins = human_confidences - target_confidences
+        # confidence_scores = F.softmax(confidence, dim=2)
+        # relevant_human_mask = (confidence_scores[:, :, self.cls_id] > 0.1).float()
+        # margins = margins * relevant_human_mask
+        # return torch.sum(margins, dim=1)
 
 
         ### following approach uses cross entropy on human confidences
