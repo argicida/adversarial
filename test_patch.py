@@ -63,9 +63,9 @@ def test_results_ssd(image, net):
         tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
         tensor = tensor.view(height, width, 3).transpose(0, 1).transpose(0, 2).contiguous().cuda()
         tensor = tensor.view(1, 3, height, width)
-        tensor = tensor.float().div(255.0).cuda()
+        tensor = tensor.float().cuda()
     elif type(image) == np.ndarray:  # cv2 image
-        tensor = torch.from_numpy(image.transpose(2, 0, 1)).float().div(255.0).unsqueeze(0).cuda()
+        tensor = torch.from_numpy(image.transpose(2, 0, 1)).float().unsqueeze(0).cuda()
     else:
         print("unknown image type")
         exit(-1)
@@ -118,7 +118,7 @@ def load_ssd(device):
     ssd = create_vgg_ssd(21, is_test=True)
     ssd.load(ssd_weightfile)
     ssd = ssd.cuda(device)
-    single_image_predictor = create_vgg_ssd_predictor(ssd, device=device)
+    single_image_predictor = create_vgg_ssd_predictor(ssd, nms_method="hard", device=device)
     predict_function = single_image_predictor.predict
     return predict_function
 
@@ -132,7 +132,7 @@ def main():
     test_imgdir = "inria/Test/pos"
     cachedir = "testing"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
-    patchfile = "saved_patches/perry_2019-10-26_07-45-00-500_epochs_ssd_sum_margin.jpg"
+    patchfile = "saved_patches/patch_2019-10-27_04-03-35-500_epochs.jpg"
 
     patch_applier = PatchApplier().cuda()
     patch_transformer = PatchTransformer().cuda()
@@ -202,9 +202,9 @@ def main():
             # resize image to fit into yolo neural net
             resize = transforms.Resize((img_size, img_size))
             # resize image to fit the ssd neural net
+            padded_img = resize(padded_img)
             ssd_resize = transforms.Resize((ssd_img_size, ssd_img_size))
             ssd_padded_img = ssd_resize(padded_img)
-            padded_img = resize(padded_img)
             cleanname = name + ".png"
             # save this image
             # padded_img.save(os.path.join(savedir, 'clean/', cleanname))

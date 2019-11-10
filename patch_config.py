@@ -17,12 +17,12 @@ class BaseConfig(object):
         self.start_learning_rate = 0.03 # used by dutch for yolov2
         #self.start_learning_rate = 0.003
         self.decay = 0 # used by dutch for yolov2
-        #self.decay = 1e-3
+        #self.decay = 1e-5
         self.start_patch = 'grey'
         #self.start_patch = 'random'
         self.patch_name = 'base'
 
-        self.scheduler_factory = lambda x: optim.lr_scheduler.ReduceLROnPlateau(x, 'min', patience=50)
+        self.scheduler_factory = lambda x: optim.lr_scheduler.ReduceLROnPlateau(x, 'min', patience=10)
         self.max_tv = 0
 
         self.batch_size = 20
