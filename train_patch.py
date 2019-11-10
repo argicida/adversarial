@@ -118,10 +118,26 @@ class Yolov3_Output_Extractor(nn.Module):
         self.nms_thresh = 0.4
         return
 
-    def forward(self, v3_out):
-        with torch.no_grad():
-            outputs = yolov3_utils.non_max_suppression(v3_out)
-       	return outputs
+    def forward(self, prediction):
+        if (prediction is not None):
+           prediction[..., :4] = yolov3_utils.xywh2xyxy(prediction[..., :4])
+
+           # Filter out confidence scores below threshold
+           prediction = prediction[prediction[:,:,4] >= self.confidence_thresh]
+           # If none are remaining => process next image
+           if not prediction[0].size(0):
+              return prediction
+           # Object confidence times class confidence
+           score = prediction[:,4] * prediction[:,5:].max(1)[0]
+           # Sort by it
+           prediction = prediction[(-score).argsort()]
+           class_confs, class_preds = prediction[:, 5:].max(1, keepdim=True)
+           detections = torch.cat((prediction[:, :5], class_confs.float(), class_preds.float()), 1)
+           detections = detections[detections[:,6] == 0]
+           detections = detections[:,4]
+           return detections
+        else:
+            return None
 
 
 class SSD_Output_Extractor(nn.Module):
@@ -162,13 +178,13 @@ class PatchTrainer(object):
         self.config = patch_config.patch_configs[mode]()
 
         #self.yolov2 = load_yolov2()
-        #self.yolov3 = load_yolov3()
+        self.yolov3 = load_yolov3()
         self.ssd = load_ssd()
 
         self.patch_applier = PatchApplier().cuda()
         self.patch_transformer = PatchTransformer().cuda()
         #self.yolov2_output_extractor = Yolov2_Output_Extractor(0, 80, self.config).cuda()
-        #self.yolov3_output_extractor = Yolov3_Output_Extractor(0, 80, self.config).cuda()
+        self.yolov3_output_extractor = Yolov3_Output_Extractor(0, 80, self.config).cuda()
         self.ssd_output_extractor = SSD_Output_Extractor(15)
         self.non_printability_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
         self.total_variation = TotalVariation().cuda()
@@ -227,9 +243,9 @@ class PatchTrainer(object):
             ep_nps_loss = 0
             ep_tv_loss = 0
             ep_loss = 0
-            ep_ssd_loss = 0
+            # ep_ssd_loss = 0
             #ep_yolov2_loss = 0
-            #ep_yolov3_loss = 0
+            ep_yolov3_loss = 0
             bt0 = time.time()
 
             # I have no fucking clue how long this is supposed to be running, probably for the epoch length? Needs
@@ -270,12 +286,11 @@ class PatchTrainer(object):
                     # Looks to be where the given patch is evaluated, however all these objects are not included within
                     # The given darknet model. Documentation for the original needs to be found and researched
                     #output_yolov2 = self.yolov2(p_img_batch)
-                    #output_yolov3 = self.yolov3(p_img_batch)
-                    output_ssd = self.ssd(ssd_p_img_batch)
+                    output_yolov3 = self.yolov3(p_img_batch)
+                    #output_ssd = self.ssd(ssd_p_img_batch)
                     #max_prob_yolov2 = self.yolov2_output_extractor(output_yolov2)
-                    #max_prob_yolov3 = self.yolov3_output_extractor(output_yolov3)
-                    max_prob_ssd= self.ssd_output_extractor(output_ssd)
-                    #print("max_prob_yolov3[0].size(): " + str(max_prob_yolov3[0].size()))
+                    max_prob_yolov3 = self.yolov3_output_extractor(output_yolov3)
+                    # max_prob_ssd = self.ssd_output_extractor(output_ssd)
 
                     non_printability_score = self.non_printability_calculator(adv_patch)
                     patch_variation = self.total_variation(adv_patch)
@@ -287,11 +302,11 @@ class PatchTrainer(object):
                     #patch_saturation_loss = patch_saturation*1
 
                     #detection_loss_yolov2 = torch.mean(max_prob_yolov2)
-                    #detection_loss_yolov3 = torch.mean(max_prob_yolov3)
-                    detection_loss_ssd = torch.mean(max_prob_ssd)
+                    detection_loss_yolov3 = torch.mean(max_prob_yolov3)
+                    # detection_loss_ssd = torch.mean(max_prob_ssd)
 
-                    #detectino_loss = detection_loss_yolov2 + detection_loss_yolov3 + detection_loss_ssd
-                    detection_loss = detection_loss_ssd * 1
+                    #detection_loss = detection_loss_yolov2 + detection_loss_yolov3 + detection_loss_ssd
+                    detection_loss = detection_loss_yolov3 * 1
                     loss = 0
                     loss += detection_loss
                     #loss += printability_loss
@@ -302,9 +317,9 @@ class PatchTrainer(object):
                     ep_det_loss += detection_loss.detach().cpu().numpy()
                     ep_nps_loss += printability_loss.detach().cpu().numpy()
                     ep_tv_loss += patch_variation_loss.detach().cpu().numpy()
-                    ep_ssd_loss += detection_loss_ssd.detach().cpu().numpy()
-                    #ep_yolov2_loss += detection_loss_yolov2.detach().cpu().numpy()
-                    #ep_yolov3_loss += detection_loss_yolov3.detach().cpu().numpy()
+                    # ep_ssd_loss += detection_loss_ssd.detach().cpu().numpy()
+                    # ep_yolov2_loss += detection_loss_yolov2.detach().cpu().numpy()
+                    ep_yolov3_loss += detection_loss_yolov3.detach().cpu().numpy()
                     ep_loss += loss.detach().cpu().numpy()
 
                     # Calculates the gradient of the loss function
@@ -332,7 +347,7 @@ class PatchTrainer(object):
                     self.writer.add_scalar('batch/total_det_loss', detection_loss.detach().cpu().numpy(), iteration)
                     #self.writer.add_scalar('batch/YOLOv2_loss', detection_loss_yolov2.detach().cpu().numpy(), iteration)
                     #self.writer.add_scalar('batch/YOLOv3_loss', detection_loss_yolov3.detach().cpu().numpy(), iteration)
-                    self.writer.add_scalar('batch/SSD_loss', detection_loss_ssd.detach().cpu().numpy(), iteration)
+                    #self.writer.add_scalar('batch/SSD_loss', detection_loss_ssd.detach().cpu().numpy(), iteration)
                     self.writer.add_scalar('batch/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
                     self.writer.add_scalar('batch/tv_loss', patch_variation_loss.detach().cpu().numpy(), iteration)
                     self.writer.add_scalar('batch/epoch', epoch, iteration)
@@ -355,13 +370,13 @@ class PatchTrainer(object):
             ep_tv_loss = ep_tv_loss/len(train_loader)
             ep_loss = ep_loss/len(train_loader)
             #ep_yolov2_loss = ep_yolov2_loss/len(train_loader)
-            #ep_yolov3_loss = ep_yolov3_loss/len(train_loader)
-            ep_ssd_loss = ep_ssd_loss/len(train_loader)
+            ep_yolov3_loss = ep_yolov3_loss/len(train_loader)
+            #ep_ssd_loss = ep_ssd_loss/len(train_loader)
             self.writer.add_scalar('loss/total_loss', ep_loss, epoch)
             self.writer.add_scalar('loss/total_det_loss', ep_det_loss, epoch)
             # self.writer.add_scalar('loss/YOLOv2_loss', ep_yolov2_loss, epoch)
             # self.writer.add_scalar('loss/YOLOv3_loss', ep_yolov3_loss, epoch)
-            self.writer.add_scalar('loss/SSD_loss', ep_ssd_loss, epoch)
+            # self.writer.add_scalar('loss/SSD_loss', ep_ssd_loss, epoch)
             self.writer.add_scalar('loss/printability_loss', ep_nps_loss, epoch)
             self.writer.add_scalar('loss/tv_loss',ep_tv_loss, epoch)
 
