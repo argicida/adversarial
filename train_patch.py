@@ -120,7 +120,7 @@ class Yolov3_Output_Extractor(nn.Module):
 
     def forward(self, detections):
         object_conf = detections[:,:,4]
-        class_conf = detections[:,:,self.cls_id]
+        class_conf = detections[:,:,self.cls_id + 5]
         picked = self.config.loss_target(object_conf, class_conf)
         max_conf, _ = torch.max(picked, dim=1)
         return max_conf
