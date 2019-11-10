@@ -118,26 +118,12 @@ class Yolov3_Output_Extractor(nn.Module):
         self.nms_thresh = 0.4
         return
 
-    def forward(self, prediction):
-        if (prediction is not None):
-           prediction[..., :4] = yolov3_utils.xywh2xyxy(prediction[..., :4])
-
-           # Filter out confidence scores below threshold
-           prediction = prediction[prediction[:,:,4] >= self.confidence_thresh]
-           # If none are remaining => process next image
-           if not prediction[0].size(0):
-              return prediction
-           # Object confidence times class confidence
-           score = prediction[:,4] * prediction[:,5:].max(1)[0]
-           # Sort by it
-           prediction = prediction[(-score).argsort()]
-           class_confs, class_preds = prediction[:, 5:].max(1, keepdim=True)
-           detections = torch.cat((prediction[:, :5], class_confs.float(), class_preds.float()), 1)
-           detections = detections[detections[:,6] == 0]
-           detections = detections[:,4]
-           return detections
-        else:
-            return None
+    def forward(self, detections):
+        object_conf = detections[:,:,4]
+        class_conf = detections[:,:,self.cls_id]
+        picked = self.config.loss_target(object_conf, class_conf)
+        max_conf, _ = torch.max(picked, dim=1)
+        return max_conf
 
 
 class SSD_Output_Extractor(nn.Module):
