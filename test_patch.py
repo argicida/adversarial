@@ -1,126 +1,25 @@
-import sys
-import time
 import os
 import torch
-import torch.optim as optim
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import Dataset
 from torchvision import transforms
-from PIL import Image, ImageDraw
-from utils import *
-from darknet import *
+from PIL import Image
+
 from load_data import PatchTransformer, PatchApplier, InriaDataset
 import json
-import torch.backends.cudnn as cudnn
-from torch.autograd import Variable
 import numpy as np
+
+from darknet import Darknet as Yolov2
+from utils import do_detect as yolov2_detect
 
 from implementations.yolov3.models import Darknet as Yolov3
 from implementations.yolov3.utils import utils as yolov3_utils
 
 from implementations.ssd.vision.ssd.vgg_ssd import create_vgg_ssd, create_vgg_ssd_predictor
 
-def test_results_yolov3(image, net):
-    detection_confidence_threshold = 0.5
-    nms_thres = 0.4
-    human_positives = 0
-    total_positives = 0
+from matplotlib import pyplot as plt
+from matplotlib import patches
 
-    tensor = None
-    if isinstance(image, Image.Image):
-        width = image.width
-        height = image.height
-        tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
-        tensor = tensor.view(height, width, 3).transpose(0, 1).transpose(0, 2).contiguous().cuda()
-        tensor = tensor.view(1, 3, height, width)
-        tensor = tensor.float().div(255.0)
-    elif type(image) == np.ndarray:  # cv2 image
-        tensor = torch.from_numpy(image.transpose(2, 0, 1)).float().div(255.0).unsqueeze(0).cuda()
-    else:
-        print("unknown image type")
-        exit(-1)
-
-    with torch.no_grad():
-        outputs = net(tensor)
-        outputs = yolov3_utils.non_max_suppression(outputs, conf_thres=detection_confidence_threshold, nms_thres=nms_thres)
-        boxes = outputs[0]
-    if boxes is not None:
-        for box in boxes:
-            if box[6] == 0:
-                human_positives += 1
-        total_positives = len(boxes)
-    return human_positives, total_positives
-
-
-def test_results_ssd(image, net):
-    human_positives = 0
-    total_positives = 0
-    tensor = None
-    if isinstance(image, Image.Image):
-        width = image.width
-        height = image.height
-        tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
-        tensor = tensor.view(height, width, 3).transpose(0, 1).transpose(0, 2).contiguous().cuda()
-        tensor = tensor.view(1, 3, height, width)
-        tensor = tensor.float().cuda()
-    elif type(image) == np.ndarray:  # cv2 image
-        tensor = torch.from_numpy(image.transpose(2, 0, 1)).float().unsqueeze(0).cuda()
-    else:
-        print("unknown image type")
-        exit(-1)
-    tensor[:, 0, :, :] -= 123
-    tensor[:, 1, :, :] -= 117
-    tensor[:, 2, :, :] -= 104
-    if torch.cuda.is_available():
-        tensor = tensor.cuda()
-    boxes, labels, probs = net(tensor)
-    for i in range(len(labels)):
-        clas = labels[i]
-        if clas == 15:
-            human_positives += 1
-    total_positives = len(labels)
-    return human_positives, total_positives
-
-
-def test_results_yolov2(image, darknet_model):
-    detection_confidence_threshold = 0.5
-    nms_threshold = 0.4
-    human_box_count = 0
-    with torch.no_grad():
-        boxes = do_detect(darknet_model, image, detection_confidence_threshold, nms_threshold, use_cuda=True)
-    # boxes = nms(boxes, nms_threshold)
-    for box in boxes:
-        if box[6] == 0:
-            human_box_count = human_box_count + 1
-    total_box_count = len(boxes)
-    return human_box_count, total_box_count
-
-
-def load_yolov2(device):
-    yolov2_cfgfile = "cfg/yolov2.cfg"
-    yolov2_weightfile = "weights/yolov2.weights"
-    yolov2 = Darknet(yolov2_cfgfile)
-    yolov2.load_weights(yolov2_weightfile)
-    return yolov2.eval().cuda(device)
-
-
-def load_yolov3(device):
-    yolov3_cfgfile = "./implementations/yolov3/config/yolov3.cfg"
-    yolov3_weightfile = "./implementations/yolov3/weights/yolov3.weights"
-    yolov3 = Yolov3(yolov3_cfgfile)
-    yolov3.load_darknet_weights(yolov3_weightfile)
-    return yolov3.cuda(device)
-
-
-def load_ssd(device):
-    ssd_weightfile = "./implementations/ssd/models/vgg16-ssd-mp-0_7726.pth"
-    ssd = create_vgg_ssd(21, is_test=True)
-    ssd.load(ssd_weightfile)
-    ssd = ssd.cuda(device)
-    single_image_predictor = create_vgg_ssd_predictor(ssd, nms_method="hard", device=device)
-    predict_function = single_image_predictor.predict
-    return predict_function
+VISUAL_DEBUG = True
+PRINT_NMS_OUTPUT = True
 
 
 def main():
@@ -132,7 +31,7 @@ def main():
     test_imgdir = "inria/Test/pos"
     cachedir = "testing"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
-    patchfile = "saved_patches/patch_2019-10-27_04-03-35-500_epochs.jpg"
+    patchfile = "saved_patches/perry_08-26_500_epochs.jpg"
 
     patch_applier = PatchApplier().cuda()
     patch_transformer = PatchTransformer().cuda()
@@ -140,6 +39,8 @@ def main():
     batch_size = 1
     max_lab = 14
     img_size = yolov2.height
+    yolov2_img_size = img_size
+    yolov3_img_size = img_size
     ssd_img_size = 300
 
     patch_size = 300
@@ -205,13 +106,12 @@ def main():
             padded_img = resize(padded_img)
             ssd_resize = transforms.Resize((ssd_img_size, ssd_img_size))
             ssd_padded_img = ssd_resize(padded_img)
-            cleanname = name + ".png"
             # save this image
+            # cleanname = name + ".png"
             # padded_img.save(os.path.join(savedir, 'clean/', cleanname))
 
             """ at this point, clean images are prepped to be analyzed by yolo """
-            print("Ready to be analyzed")
-            human_positives, object_positives = test_results_yolov2(padded_img, yolov2)
+            human_positives, object_positives = test_results_yolov2(padded_img, yolov2, yolov2_img_size, yolov2_img_size)
             yolov2_clean_human_positives += human_positives
             yolov2_clean_object_positives += object_positives
 
@@ -226,13 +126,13 @@ def main():
             try:
                 _ = os.path.getsize(txtpath)
             except FileNotFoundError:
-                # generate a label file for the padded image
-                boxes = do_detect(yolov2, padded_img, 0.5, 0.4, True) # run yolo object detection on image
+                # generate a label file for the clean, padded image
+                boxes = yolov2_detect(yolov2, padded_img, 0.5, 0.4, True) # run yolo object detection on image
                 #boxes = nms(boxes, 0.4) # run non-maximum suppression to remove redundant boxes, already called in do_detect()
                 textfile = open(txtpath,'w+')
                 for box in boxes:
                     cls_id = box[6]
-                    if(cls_id == 0):   # if person
+                    if cls_id == 0:   # if person
                         x_center = box[0]
                         y_center = box[1]
                         width = box[2]
@@ -288,13 +188,8 @@ def main():
             p_img_batch = patch_applier(img_fake_batch, adv_batch_t)
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
-            properpatchedname = name + "_p.png"
-            # p_img_pil.save(os.path.join(savedir, 'proper_patched/', properpatchedname))
 
-            # generate a label file for the image with sticker
-            txtname = properpatchedname.replace('.png', '.txt')
-            txtpath = os.path.abspath(os.path.join(cachedir, 'proper_patched/', 'yolo-labels/', txtname))
-            human_positives, object_positives = test_results_yolov2(p_img_pil, yolov2)
+            human_positives, object_positives = test_results_yolov2(p_img_pil, yolov2, yolov2_img_size, yolov2_img_size)
             yolov2_patch_human_positives += human_positives
             yolov2_patch_object_positives += object_positives
             
@@ -306,7 +201,13 @@ def main():
             human_positives, object_positives = test_results_yolov3(p_img_pil, yolov3)
             yolov3_patch_human_positives += human_positives
             yolov3_patch_object_positives += object_positives
+
             '''
+            properpatchedname = name + "_p.png"
+            # p_img_pil.save(os.path.join(savedir, 'proper_patched/', properpatchedname))
+            # generate a label file for the patched detections
+            txtname = properpatchedname.replace('.png', '.txt')
+            txtpath = os.path.abspath(os.path.join(cachedir, 'proper_patched/', 'yolo-labels/', txtname))
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             #boxes = nms(boxes, 0.4)
             textfile = open(txtpath,'w+')
@@ -328,13 +229,8 @@ def main():
             p_img_batch = patch_applier(img_fake_batch, adv_batch_t)
             p_img = p_img_batch.squeeze(0)
             p_img_pil = transforms.ToPILImage('RGB')(p_img.cpu())
-            properpatchedname = name + "_rdp.png"
-            # p_img_pil.save(os.path.join(savedir, 'random_patched/', properpatchedname))
 
-             # generate a label file for the random patch image
-            txtname = properpatchedname.replace('.png', '.txt')
-            txtpath = os.path.abspath(os.path.join(cachedir, 'random_patched/', 'yolo-labels/', txtname))
-            human_positives, object_positives = test_results_yolov2(p_img_pil, yolov2)
+            human_positives, object_positives = test_results_yolov2(p_img_pil, yolov2, yolov2_img_size, yolov2_img_size)
             yolov2_noise_human_positives += human_positives
             yolov2_noise_object_positives += object_positives
             
@@ -346,7 +242,17 @@ def main():
             human_positives, object_positives = test_results_yolov3(p_img_pil, yolov3)
             yolov3_noise_human_positives += human_positives
             yolov3_noise_object_positives += object_positives
+
+            if VISUAL_DEBUG:
+                # show detections using pyplot state altered by detection functions
+                plt.show()
             '''
+            properpatchedname = name + "_rdp.png"
+            # p_img_pil.save(os.path.join(savedir, 'random_patched/', properpatchedname))
+
+            # generate a label file for the random patch image
+            txtname = properpatchedname.replace('.png', '.txt')
+            txtpath = os.path.abspath(os.path.join(cachedir, 'random_patched/', 'yolo-labels/', txtname))
             boxes = do_detect(darknet_model, p_img_pil, 0.5, 0.4, True)
             #boxes = nms(boxes, 0.4)
             textfile = open(txtpath,'w+')
@@ -398,6 +304,152 @@ def main():
     # stats.write(f'{noise_object_positives / clean_object_positives},{noise_human_positives / clean_human_positives},'
     # f'{patch_object_positives / clean_object_positives},{patch_human_positives / clean_human_positives}\n')
     # stats.close()
+
+
+def display_bounding_boxes(input_image:Image.Image, x0_y0_width_height_human_list, title):
+    fig, ax = plt.subplots(1)
+    ax.imshow(input_image)
+    for box in x0_y0_width_height_human_list:
+        x0, y0, width, height, human = box
+        color = 'r' if human else 'g'
+        rect = patches.Rectangle((x0, y0), width, height, linewidth=1, edgecolor=color, facecolor='none')
+        ax.add_patch(rect)
+    plt.title(title)
+
+
+def test_results_yolov3(image, net):
+    detection_confidence_threshold = 0.5
+    nms_thres = 0.4
+    human_positives = 0
+    total_positives = 0
+
+    tensor = None
+    if isinstance(image, Image.Image):
+        width = image.width
+        height = image.height
+        tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
+        tensor = tensor.view(height, width, 3).transpose(0, 1).transpose(0, 2).contiguous().cuda()
+        tensor = tensor.view(1, 3, height, width)
+        tensor = tensor.float().div(255.0)
+    elif type(image) == np.ndarray:  # cv2 image
+        tensor = torch.from_numpy(image.transpose(2, 0, 1)).float().div(255.0).unsqueeze(0).cuda()
+    else:
+        print("unknown image type")
+        exit(-1)
+
+    with torch.no_grad():
+        outputs = net(tensor)
+        outputs = yolov3_utils.non_max_suppression(outputs, conf_thres=detection_confidence_threshold, nms_thres=nms_thres)
+        boxes = outputs[0]
+    info = []
+    if boxes is not None:
+        for box in boxes:
+            x0, y0, x1, y1, conf, cls_conf, cls = box
+            human = False
+            if PRINT_NMS_OUTPUT:
+                print("YOLOV3 %s"%(str(box)))
+            if cls == 0:
+                human = True
+                human_positives += 1
+            info.append([x0, y0, x1-x0, y1-y0, human])
+        total_positives = len(boxes)
+    if VISUAL_DEBUG:
+        display_bounding_boxes(image, info, "yolov3")
+    return human_positives, total_positives
+
+
+def test_results_ssd(image, net):
+    class_person = 15
+    human_positives = 0
+    total_positives = 0
+    tensor = None
+    if isinstance(image, Image.Image):
+        width = image.width
+        height = image.height
+        tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
+        tensor = tensor.view(height, width, 3).transpose(0, 1).transpose(0, 2).contiguous().cuda()
+        tensor = tensor.view(1, 3, height, width)
+        tensor = tensor.float().cuda()
+    elif type(image) == np.ndarray:  # cv2 image
+        tensor = torch.from_numpy(image.transpose(2, 0, 1)).float().unsqueeze(0).cuda()
+    else:
+        print("unknown image type")
+        exit(-1)
+    tensor[:, 0, :, :] -= 123
+    tensor[:, 1, :, :] -= 117
+    tensor[:, 2, :, :] -= 104
+    if torch.cuda.is_available():
+        tensor = tensor.cuda()
+    with torch.no_grad():
+        boxes, labels, probs = net(tensor)
+    info = []
+    for i, output_class in enumerate(labels):
+        box = boxes[i]
+        x0, y0, x1, y1 = box[0], box[1], box[2], box[3]
+        human = False
+        if PRINT_NMS_OUTPUT:
+            print("SSD %s" % (str(boxes[i])))
+        if output_class == class_person:
+            human = True
+            human_positives += 1
+        info.append([x0, y0, x1 - x0, y1 - y0, human])
+    if VISUAL_DEBUG:
+        display_bounding_boxes(image, info, "ssd")
+    total_positives = len(labels)
+    return human_positives, total_positives
+
+
+def test_results_yolov2(image, darknet_model, input_w, input_h):
+    detection_confidence_threshold = 0.5
+    nms_threshold = 0.4
+    human_box_count = 0
+    with torch.no_grad():
+        boxes = yolov2_detect(darknet_model, image, detection_confidence_threshold, nms_threshold, use_cuda=True)
+    info = []
+    for box in boxes:
+        if PRINT_NMS_OUTPUT:
+            print("YOLOv2 %s" % (str(box)))
+        center_x = box[0]
+        center_y = box[1]
+        width = box[2]
+        height = box[3]
+        x0 = (center_x - width / 2.0) * input_w
+        y0 = (center_y - height / 2.0) * input_h
+        human = False
+        if box[6] == 0:
+            human = True
+            human_box_count = human_box_count + 1
+        info.append([x0, y0, width * input_w, height * input_h, human])
+    if VISUAL_DEBUG:
+        display_bounding_boxes(image, info, "yolov2")
+    total_box_count = len(boxes)
+    return human_box_count, total_box_count
+
+
+def load_yolov2(device):
+    yolov2_cfgfile = "cfg/yolov2.cfg"
+    yolov2_weightfile = "weights/yolov2.weights"
+    yolov2 = Yolov2(yolov2_cfgfile)
+    yolov2.load_weights(yolov2_weightfile)
+    return yolov2.eval().cuda(device)
+
+
+def load_yolov3(device):
+    yolov3_cfgfile = "./implementations/yolov3/config/yolov3.cfg"
+    yolov3_weightfile = "./implementations/yolov3/weights/yolov3.weights"
+    yolov3 = Yolov3(yolov3_cfgfile)
+    yolov3.load_darknet_weights(yolov3_weightfile)
+    return yolov3.cuda(device)
+
+
+def load_ssd(device):
+    ssd_weightfile = "./implementations/ssd/models/vgg16-ssd-mp-0_7726.pth"
+    ssd = create_vgg_ssd(21, is_test=True)
+    ssd.load(ssd_weightfile)
+    ssd = ssd.cuda(device)
+    single_image_predictor = create_vgg_ssd_predictor(ssd, nms_method="hard", device=device)
+    predict_function = single_image_predictor.predict
+    return predict_function
 
 
 if __name__ == '__main__':

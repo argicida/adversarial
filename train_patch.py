@@ -4,28 +4,159 @@ Training code for Adversarial patch training
 
 """
 
-# import PIL
-# import load_data
-from tqdm import tqdm
-
-from implementations.yolov3.models import Darknet as Yolov3
-from implementations.yolov3.utils import utils as yolov3_utils
-
-from implementations.ssd.vision.ssd.vgg_ssd import create_vgg_ssd
-
-from load_data import *
-# import gc
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-from torch import autograd
-from torchvision import transforms
-from tensorboardX import SummaryWriter
-# import subprocess
-
 import patch_config
 import sys
 import time
+from tqdm import tqdm
+
+import numpy as np
+import torch
+import torch.optim as optim
+import torch.nn as nn
+import torch.nn.functional as F
+from torch import autograd
+from torchvision import transforms
+
+from PIL import Image
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from tensorboardX import SummaryWriter
+
+from torch.utils.data import Dataset
+from load_data import InriaDataset, PatchApplier, PatchTransformer
+
+#yolov2
+from darknet import Darknet
+
+#yolov3
+from implementations.yolov3.models import Darknet as Yolov3
+
+#ssd
+from implementations.ssd.vision.ssd.vgg_ssd import create_vgg_ssd
+
 # import datetime
+
+
+class Yolov2_Output_Extractor(nn.Module):
+    """MaxProbExtractor: extracts max class probability for class from YOLO output.
+
+    Module providing the functionality necessary to extract the max class probability for one class from YOLO output.
+
+    """
+
+    def __init__(self, cls_id, num_cls, config):
+        super(Yolov2_Output_Extractor, self).__init__()
+        self.cls_id = cls_id
+        self.num_cls = num_cls
+        self.config = config
+
+    def forward(self, YOLOoutput):
+        # get values neccesary for transformation
+        if YOLOoutput.dim() == 3:
+            YOLOoutput = YOLOoutput.unsqueeze(0)
+        batch = YOLOoutput.size(0)
+        assert (YOLOoutput.size(1) == (5 + self.num_cls ) * 5)
+        h = YOLOoutput.size(2)
+        w = YOLOoutput.size(3)
+        # transform the output tensor from [batch, 425, 19, 19] to [batch, 80, 1805]
+        output = YOLOoutput.view(batch, 5, 5 + self.num_cls , h * w)  # [batch, 5, 85, 361]
+        output = output.transpose(1, 2).contiguous()  # [batch, 85, 5, 361]
+        output = output.view(batch, 5 + self.num_cls , 5 * h * w)  # [batch, 85, 1805]
+        output_objectness = torch.sigmoid(output[:, 4, :])  # [batch, 1805]
+        output = output[:, 5:5 + self.num_cls , :]  # [batch, 80, 1805]
+        # perform softmax to normalize probabilities for object classes to [0,1]
+        normal_confs = torch.nn.Softmax(dim=1)(output)
+        # we only care for probabilities of the class of interest (person)
+        confs_for_class = normal_confs[:, self.cls_id, :]
+        confs_if_object = self.config.loss_target(output_objectness, confs_for_class)
+        # find the max probability for person
+        max_conf, max_conf_idx = torch.max(confs_if_object, dim=1)
+
+        return max_conf
+
+class NPSCalculator(nn.Module):
+    """NMSCalculator: calculates the non-printability score of a patch.
+
+    Module providing the functionality necessary to calculate the non-printability score (NMS) of an adversarial patch.
+
+    """
+
+    def __init__(self, printability_file, patch_side):
+        super(NPSCalculator, self).__init__()
+        self.printability_array = nn.Parameter(self.get_printability_array(printability_file, patch_side),requires_grad=False)
+
+    def forward(self, adv_patch):
+        # calculate euclidian distance between colors in patch and colors in printability_array
+        # square root of sum of squared difference
+        color_dist = (adv_patch - self.printability_array+0.000001)
+        color_dist = color_dist ** 2
+        color_dist = torch.sum(color_dist, 1)+0.000001
+        color_dist = torch.sqrt(color_dist)
+        # only work with the min distance
+        color_dist_prod = torch.min(color_dist, 0)[0] #test: change prod for min (find distance to closest color)
+        # calculate the nps by summing over all pixels
+        nps_score = torch.sum(color_dist_prod,0)
+        nps_score = torch.sum(nps_score,0)
+        return nps_score/torch.numel(adv_patch)
+
+    def get_printability_array(self, printability_file, side):
+        printability_list = []
+
+        # read in printability triplets and put them in a list
+        with open(printability_file) as f:
+            for line in f:
+                printability_list.append(line.split(","))
+
+        printability_array = []
+        for printability_triplet in printability_list:
+            printability_imgs = []
+            red, green, blue = printability_triplet
+            printability_imgs.append(np.full((side, side), red))
+            printability_imgs.append(np.full((side, side), green))
+            printability_imgs.append(np.full((side, side), blue))
+            printability_array.append(printability_imgs)
+
+        printability_array = np.asarray(printability_array)
+        printability_array = np.float32(printability_array)
+        pa = torch.from_numpy(printability_array)
+        return pa
+
+
+class TotalVariation(nn.Module):
+    """TotalVariation: calculates the total variation of a patch.
+
+    Module providing the functionality necessary to calculate the total vatiation (TV) of an adversarial patch.
+
+    """
+
+    def __init__(self):
+        super(TotalVariation, self).__init__()
+
+    def forward(self, adv_patch):
+        # bereken de total variation van de adv_patch
+        tvcomp1 = torch.sum(torch.abs(adv_patch[:, :, 1:] - adv_patch[:, :, :-1]+0.000001),0)
+        tvcomp1 = torch.sum(torch.sum(tvcomp1,0),0)
+        tvcomp2 = torch.sum(torch.abs(adv_patch[:, 1:, :] - adv_patch[:, :-1, :]+0.000001),0)
+        tvcomp2 = torch.sum(torch.sum(tvcomp2,0),0)
+        tv = tvcomp1 + tvcomp2
+        return tv/torch.numel(adv_patch)
+
+
+class SaturationCalculator(nn.Module):
+    """SaturationCalculator: calculates the saturation of a patch.
+
+    Module providing the functionality necessary to calculate the saturation of an adversarial patch.
+    Instead of calculating the actual saturation per https://www.niwa.nu/2013/05/math-behind-colorspace-conversions-rgb-hsl/
+    We calculate the variance of r,g,and b scalars within a pixel.
+    The more they differ from a shade of grey, (c, c, c), the higher the saturation/variance is
+    These variances are averaged across all pixels to measure the saturation level of a patch
+    """
+
+    def __init__(self):
+        super(SaturationCalculator, self).__init__()
+
+    def forward(self, adv_patch):
+        return torch.div(torch.sum(torch.var(adv_patch, 0)), adv_patch.numel()/3)
 
 
 class Patch(nn.Module):
@@ -321,7 +452,7 @@ class PatchTrainer(object):
 
                     #detection_loss = detection_loss_yolov2 + detection_loss_yolov3 + detection_loss_ssd
                     detection_loss = detection_loss_yolov3 * 1
-                    loss = 0
+                    loss = torch.tensor(0)
                     loss += detection_loss
                     #loss += printability_loss
                     #loss += torch.max(patch_variation_loss, torch.tensor(0.1).cuda())
