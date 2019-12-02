@@ -50,6 +50,7 @@ class PatchTransformer(nn.Module):
         pad = (img_size - adv_patch.size(-1)) / 2
         # Make a batch of patches
         adv_patch = adv_patch.unsqueeze(0)#.unsqueeze(0)
+        # for every image label and every box in the label, make a copy of the patch
         adv_batch = adv_patch.expand(lab_batch.size(0), lab_batch.size(1), -1, -1, -1)
         batch_size = torch.Size((lab_batch.size(0), lab_batch.size(1)))
         

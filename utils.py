@@ -143,7 +143,7 @@ def get_region_boxes(output, conf_thresh, num_classes, anchors, num_anchors, onl
 
     det_confs = torch.sigmoid(output[4])
 
-    cls_confs = torch.nn.Softmax()(Variable(output[5:5+num_classes].transpose(0,1))).data
+    cls_confs = torch.nn.functional.softmax(Variable(output[5:5+num_classes].transpose(0,1))).data
     # print(cls_confs.size())
     cls_max_confs, cls_max_ids = torch.max(cls_confs, 1)
     cls_max_confs = cls_max_confs.view(-1)
