@@ -16,6 +16,7 @@ testing/*/*/*.txt
 clean_results.json
 noise_results.json
 patch_results.json
+saved_patches/*
 
 # dataset
 implementations/ssd-pytorch/ssd.pytorch/VOCdevkit

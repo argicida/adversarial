@@ -28,7 +28,6 @@ PRINT_NMS_OUTPUT = False
 LABELS_DIR = "./testing"
 
 def main():
-    print("Setting everything up")
     yolov2 = load_yolov2(0)
     ssd = load_ssd(0)
     yolov3 = load_yolov3(0)
@@ -53,22 +52,17 @@ def main():
     adv_patch = adv_patch_cpu.cuda()
 
     cols = ['target', 'image_size',
-            'clean_num_obj', 'clean_num_human', 'clean_proparea_obj', 'clean_proparea_human',
-            'noise_num_obj', 'noise_num_human', 'noise_proparea_obj', 'noise_proparea_human', 'noise_box_coverage_prop', 'noise_grand_iou',
-            'patch_num_obj', 'patch_num_human', 'patch_proparea_obj', 'patch_proparea_human', 'patch_box_coverage_prop', 'patch_grand_iou'
+            'clean_num_obj', 'noise_num_obj', 'patch_num_obj',
+            'clean_num_human', 'noise_num_human', 'patch_num_human',
+            'clean_proparea_obj', 'noise_proparea_obj', 'patch_proparea_obj',
+            'clean_proparea_human', 'noise_proparea_human', 'patch_proparea_human',
+            'noise_box_coverage_prop', 'patch_box_coverage_prop',
+            'noise_grand_iou', 'patch_grand_iou'
            ]
-    statistics = [['yolov2', yolov2_img_size_sqrt**2,
-                   0, 0, 0, 0,
-                   0, 0, 0, 0, 0, 0,
-                   0, 0, 0, 0, 0, 0],
-                  ['yolov3', yolov3_img_size_sqrt**2,
-                   0, 0, 0, 0,
-                   0, 0, 0, 0, 0, 0,
-                   0, 0, 0, 0, 0, 0],
-                  ['ssd', ssd_img_size_sqrt**2,
-                   0, 0, 0, 0,
-                   0, 0, 0, 0, 0, 0,
-                   0, 0, 0, 0, 0, 0]]
+    num_numerical_cols = len(cols) - 2
+    statistics = [['yolov2', yolov2_img_size_sqrt**2] + [0 for _ in range(num_numerical_cols)],
+                  ['yolov3', yolov3_img_size_sqrt**2] + [0 for _ in range(num_numerical_cols)],
+                  ['ssd', ssd_img_size_sqrt**2] + [0 for _ in range(num_numerical_cols)]]
     statistics = pd.DataFrame(statistics, columns=cols)
 
     for imgfile in os.listdir(test_imgdir):
@@ -102,8 +96,10 @@ def main():
             if VISUAL_DEBUG:
                 # show detections using pyplot state altered by detection functions
                 plt.show()
-    print("Done")
+    patch_statistics_filepath = os.path.join(*os.path.splitext(patchfile)[0:-1]) + '.csv'
+    statistics.to_csv(patch_statistics_filepath, index=False)
     print(statistics)
+    print('statistics saved to ' + patch_statistics_filepath)
 
 def test_on_target(adv_patch, padded_img, image_filename, target_function, target_wrapper_function,
                    target:str, input_size_sqrt:int, statistics:pd.DataFrame):
@@ -257,8 +253,14 @@ def update_patched_images_statistics(statistics:pd.DataFrame,
     covered_by_patch = np.logical_and(clean_box_area, patch_box_area)
     noise_coverage_proportion = np.count_nonzero(covered_by_noise) / image_size
     patch_coverage_proportion = np.count_nonzero(covered_by_patch) / image_size
-    noise_grand_iou = np.count_nonzero(covered_by_noise) / np.count_nonzero(np.logical_or(clean_box_area, noise_box_area))
-    patch_grand_iou = np.count_nonzero(covered_by_patch) / np.count_nonzero(np.logical_or(clean_box_area, patch_box_area))
+    try:
+        noise_grand_iou = np.count_nonzero(covered_by_noise) / np.count_nonzero(np.logical_or(clean_box_area, noise_box_area))
+    except ZeroDivisionError:
+        noise_grand_iou = 0
+    try:
+        patch_grand_iou = np.count_nonzero(covered_by_patch) / np.count_nonzero(np.logical_or(clean_box_area, patch_box_area))
+    except ZeroDivisionError:
+        patch_grand_iou = 0
     statistics.loc[row_mask, 'noise_box_coverage_prop'] += noise_coverage_proportion
     statistics.loc[row_mask, 'patch_box_coverage_prop'] += patch_coverage_proportion
     statistics.loc[row_mask, 'noise_grand_iou'] += noise_grand_iou
