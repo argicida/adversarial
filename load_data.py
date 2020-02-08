@@ -233,8 +233,8 @@ class InriaDataset(Dataset):
 
     def __getitem__(self, idx):
         assert idx <= len(self), 'index range error'
-        img_path = os.path.join(self.img_dir, self.img_names[idx])
-        lab_path = os.path.join(self.lab_dir, self.img_names[idx]).replace('.jpg', '.txt').replace('.png', '.txt')
+        img_path = self.img_paths[idx]
+        lab_path = self.lab_paths[idx]
         image = Image.open(img_path).convert('RGB')
         if os.path.getsize(lab_path):       #check to see if label file contains data. 
             label = np.loadtxt(lab_path)
