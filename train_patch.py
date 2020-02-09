@@ -354,7 +354,7 @@ class PatchTrainer(object):
         img_size = 608 # dataloader configured with dimensions from yolov2
         batch_size = self.config.batch_size
         n_epochs = 500
-        max_lab = 14
+        max_box_per_image = 14
 
         time_str = time.strftime("%Y%m%d-%H%M%S")
 
@@ -364,7 +364,8 @@ class PatchTrainer(object):
 
 
         # Sets up training and determines how long the training length will be
-        train_loader = torch.utils.data.DataLoader(InriaDataset(self.config.img_dir, self.config.lab_dir, max_lab, img_size,
+        train_loader = torch.utils.data.DataLoader(InriaDataset(self.config.img_dir, self.config.lab_dir,
+                                                                max_box_per_image, img_size,
                                                                 shuffle=True),
                                                    batch_size=batch_size,
                                                    shuffle=True,
@@ -397,19 +398,20 @@ class PatchTrainer(object):
             # More research
             # TODO: note from Perry: yes this enumerates through some sort of file iterator for number of epochs
             #         the tqdm shit is just for progress bar, except for the total argument
-            for i_batch, (img_batch, lab_batch) in tqdm(enumerate(train_loader), desc=f'Running epoch {epoch}',
-                                                        total=self.epoch_length):
+            for i_batch, (img_batch, gt_boxes_batch) in tqdm(enumerate(train_loader), desc=f'Running epoch {epoch}',
+                                                                        total=self.epoch_length):
                 with autograd.detect_anomaly():
                     # Optimizes everything to run on GPUs
                     img_batch = img_batch.cuda()
-                    lab_batch = lab_batch.cuda()
+                    gt_boxes_batch_cpu = gt_boxes_batch
+                    gt_boxes_batch = gt_boxes_batch.cuda()
                     # print('TRAINING EPOCH %i, BATCH %i'%(epoch, i_batch))
                     adv_patch = patch_module()
 
                     # Creates a patch transformer with a default grey patch. Can't find this object anywhere but most
                     # Likely it allows the patch to be moved around on inputted images.
                     # TODO: Find documentation for this object
-                    adv_batch_t = self.patch_transformer(adv_patch, lab_batch, img_size, do_rotate=True, rand_loc=False)
+                    adv_batch_t = self.patch_transformer(adv_patch, gt_boxes_batch, img_size, do_rotate=True, rand_loc=False)
 
                     # Can't find this object anywhere else, most likely allows the patch to be put into inputted photos
                     # TODO: find documentation for this object

@@ -237,11 +237,11 @@ class InriaDataset(Dataset):
         lab_path = self.lab_paths[idx]
         image = Image.open(img_path).convert('RGB')
         if os.path.getsize(lab_path):       #check to see if label file contains data. 
-            label = np.loadtxt(lab_path)
+            np_label = np.loadtxt(lab_path)
         else:
-            label = np.ones([5])
+            np_label = np.ones([5])
 
-        label = torch.from_numpy(label).float()
+        label = torch.from_numpy(np_label).float()
         if label.dim() == 1:
             label = label.unsqueeze(0)
 
@@ -283,8 +283,8 @@ class InriaDataset(Dataset):
 
     def pad_lab(self, lab):
         pad_size = self.max_n_labels - lab.shape[0]
-        if(pad_size>0):
-            padded_lab = F.pad(lab, (0, 0, 0, pad_size), value=1)
+        if pad_size > 0:
+            padded_lab = F.pad(lab, [0, 0, 0, pad_size], value=1)
         else:
             padded_lab = lab
         return padded_lab
