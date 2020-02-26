@@ -5,7 +5,7 @@ import torch
 from torchvision import transforms
 from PIL import Image
 
-from load_data import PatchTransformer, PatchApplier, InriaDataset
+from patch_utilities import PatchTransformer, PatchApplier
 import numpy as np
 
 from darknet import Darknet as Yolov2
@@ -322,9 +322,9 @@ def wrapper_ssd(image, net, input_w, input_h) -> pd.DataFrame:
     else:
         print("unknown image type")
         exit(-1)
-    tensor[:, 0, :, :] -= 123
-    tensor[:, 1, :, :] -= 117
-    tensor[:, 2, :, :] -= 104
+    cuda_device = net.device
+    input_means = torch.tensor([123, 117, 104], dtype=torch.float, device=cuda_device).unsqueeze(-1).unsqueeze(-1)
+    tensor = tensor - input_means
     if torch.cuda.is_available():
         tensor = tensor.cuda()
     with torch.no_grad():

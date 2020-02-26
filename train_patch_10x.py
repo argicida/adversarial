@@ -16,14 +16,14 @@ from torchvision import transforms
 from tensorboardX import SummaryWriter
 import subprocess
 
-import patch_config
+import legacy_patch_config
 import sys
 import time
 
 
 class PatchTrainer(object):
     def __init__(self, mode):
-        self.config = patch_config.patch_configs[mode]()
+        self.config = legacy_patch_config.patch_configs[mode]()
 
         self.target_architectures = []
         for i in range(10):
@@ -241,7 +241,7 @@ def main():
     if len(sys.argv) != 2:
         print('You need to supply (only) a configuration mode.')
         print('Possible modes are:')
-        print(patch_config.patch_configs)
+        print(legacy_patch_config.patch_configs)
 
     trainer = PatchTrainer(sys.argv[1])
     trainer.train()

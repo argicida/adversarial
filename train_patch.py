@@ -3,8 +3,9 @@ Training code for Adversarial patch training
 
 
 """
-
-import patch_config
+from cli_config import FLAGS
+import legacy_patch_config
+import os
 import sys
 import time
 from tqdm import tqdm
@@ -18,12 +19,12 @@ from torch import autograd
 from torchvision import transforms
 
 from PIL import Image
-import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from tensorboardX import SummaryWriter
 
 from torch.utils.data import Dataset
-from load_data import InriaDataset, PatchApplier, PatchTransformer
+from load_data import InriaDataset
+from patch_utilities import Patch, PatchApplier, PatchTransformer, TotalVariation, NPSCalculator, SaturationCalculator
 
 #yolov2
 from darknet import Darknet
@@ -74,100 +75,16 @@ class Yolov2_Output_Extractor(nn.Module):
 
         return max_conf
 
-class NPSCalculator(nn.Module):
-    """NMSCalculator: calculates the non-printability score of a patch.
-
-    Module providing the functionality necessary to calculate the non-printability score (NMS) of an adversarial patch.
-
-    """
-
-    def __init__(self, printability_file, patch_side):
-        super(NPSCalculator, self).__init__()
-        self.printability_array = nn.Parameter(self.get_printability_array(printability_file, patch_side),requires_grad=False)
-
-    def forward(self, adv_patch):
-        # calculate euclidian distance between colors in patch and colors in printability_array
-        # square root of sum of squared difference
-        color_dist = (adv_patch - self.printability_array+0.000001)
-        color_dist = color_dist ** 2
-        color_dist = torch.sum(color_dist, 1)+0.000001
-        color_dist = torch.sqrt(color_dist)
-        # only work with the min distance
-        color_dist_prod = torch.min(color_dist, 0)[0] #test: change prod for min (find distance to closest color)
-        # calculate the nps by summing over all pixels
-        nps_score = torch.sum(color_dist_prod,0)
-        nps_score = torch.sum(nps_score,0)
-        return nps_score/torch.numel(adv_patch)
-
-    def get_printability_array(self, printability_file, side):
-        printability_list = []
-
-        # read in printability triplets and put them in a list
-        with open(printability_file) as f:
-            for line in f:
-                printability_list.append(line.split(","))
-
-        printability_array = []
-        for printability_triplet in printability_list:
-            printability_imgs = []
-            red, green, blue = printability_triplet
-            printability_imgs.append(np.full((side, side), red))
-            printability_imgs.append(np.full((side, side), green))
-            printability_imgs.append(np.full((side, side), blue))
-            printability_array.append(printability_imgs)
-
-        printability_array = np.asarray(printability_array)
-        printability_array = np.float32(printability_array)
-        pa = torch.from_numpy(printability_array)
-        return pa
-
-
-class TotalVariation(nn.Module):
-    """TotalVariation: calculates the total variation of a patch.
-
-    Module providing the functionality necessary to calculate the total vatiation (TV) of an adversarial patch.
-
-    """
-
-    def __init__(self):
-        super(TotalVariation, self).__init__()
-
-    def forward(self, adv_patch):
-        # bereken de total variation van de adv_patch
-        tvcomp1 = torch.sum(torch.abs(adv_patch[:, :, 1:] - adv_patch[:, :, :-1]+0.000001),0)
-        tvcomp1 = torch.sum(torch.sum(tvcomp1,0),0)
-        tvcomp2 = torch.sum(torch.abs(adv_patch[:, 1:, :] - adv_patch[:, :-1, :]+0.000001),0)
-        tvcomp2 = torch.sum(torch.sum(tvcomp2,0),0)
-        tv = tvcomp1 + tvcomp2
-        return tv/torch.numel(adv_patch)
-
-
-class SaturationCalculator(nn.Module):
-    """SaturationCalculator: calculates the saturation of a patch.
-
-    Module providing the functionality necessary to calculate the saturation of an adversarial patch.
-    Instead of calculating the actual saturation per https://www.niwa.nu/2013/05/math-behind-colorspace-conversions-rgb-hsl/
-    We calculate the variance of r,g,and b scalars within a pixel.
-    The more they differ from a shade of grey, (c, c, c), the higher the saturation/variance is
-    These variances are averaged across all pixels to measure the saturation level of a patch
-    """
-
-    def __init__(self):
-        super(SaturationCalculator, self).__init__()
-
-    def forward(self, adv_patch):
-        return torch.div(torch.sum(torch.var(adv_patch, 0)), adv_patch.numel()/3)
-
 
 class Patch(nn.Module):
     def __init__(self, patch_size, typ="grey", tanh=True):
         super(Patch, self).__init__()
         if typ == 'grey':
             # when params are 0. the rgbs are 0.5
-            self.params = nn.Parameter(torch.full((3, patch_size, patch_size), 0))
+            self.params = nn.Parameter.__new__(torch.full((3, patch_size, patch_size), 0))
         elif typ == 'random':
             # uniform distribution range from -2 to -2
-            self.params = nn.Parameter((torch.rand((3, patch_size, patch_size))*2 - 1) * 2)
+            self.params = nn.Parameter.__new__((torch.rand((3, patch_size, patch_size))*2 - 1) * 2)
         # both options force the patch to have valid rgb values
         if tanh:
             self.constraint = self.tanh_constraint
@@ -208,35 +125,6 @@ def load_ssd(device=0):
     ssd = create_vgg_ssd(voc_num_classes, is_test=False)
     ssd.load(ssd_weightfile)
     return ssd.eval().cuda(device)
-
-
-def plot_grad_flow(named_parameters):
-    '''Plots the gradients flowing through different layers in the net during training.
-    Can be used for checking for possible gradient vanishing / exploding problems.
-
-    Usage: Plug this function in Trainer class after loss.backwards() as
-    "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
-    ave_grads = []
-    max_grads = []
-    layers = []
-    for n, p in named_parameters:
-        if (p.requires_grad) and ("bias" not in n):
-            layers.append(n)
-            ave_grads.append(p.grad.abs().mean())
-            max_grads.append(p.grad.abs().max())
-    plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
-    plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
-    plt.hlines(0, 0, len(ave_grads) + 1, lw=2, color="k")
-    plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
-    plt.xlim(left=0, right=len(ave_grads))
-    plt.ylim(bottom=-0.001, top=0.02)  # zoom in on the lower gradient regions
-    plt.xlabel("Layers")
-    plt.ylabel("average gradient")
-    plt.title("Gradient flow")
-    plt.grid(True)
-    plt.legend([Line2D([0], [0], color="c", lw=4),
-                Line2D([0], [0], color="b", lw=4),
-                Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
 
 
 class Yolov3_Output_Extractor(nn.Module):
@@ -318,264 +206,229 @@ class SSD_Output_Extractor(nn.Module):
         #return torch.sum(loss, dim=1)
 
 
-class PatchTrainer(object):
-    def __init__(self, mode):
-        self.config = patch_config.patch_configs[mode]()
-
-        #self.yolov2 = load_yolov2()
-        self.yolov3 = load_yolov3()
-        self.ssd = load_ssd()
-
-        self.patch_applier = PatchApplier().cuda()
-        self.patch_transformer = PatchTransformer().cuda()
-        #self.yolov2_output_extractor = Yolov2_Output_Extractor(0, 80, self.config).cuda()
-        self.yolov3_output_extractor = Yolov3_Output_Extractor(0, 80, self.config).cuda()
-        self.ssd_output_extractor = SSD_Output_Extractor(15)
-        self.non_printability_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
-        self.total_variation = TotalVariation().cuda()
-        self.saturation_calculator = SaturationCalculator().cuda()
-        # Property in which most data is written to, including the patch
-        self.writer = self.init_tensorboard(mode)
-
-    def init_tensorboard(self, name=None):
-        #subprocess.Popen(['tensorboard', '--logdir=runs'])
-        if name is not None:
-            time_str = time.strftime("%Y%m%d-%H%M%S")
-            return SummaryWriter(f'runs/{time_str}_{name}')
-        else:
-            return SummaryWriter()
-
-    def train(self):
-        """
-        Optimize a patch to generate an adversarial example.
-        """
-
-        # Initialize some settings
-        img_size = 608 # dataloader configured with dimensions from yolov2
-        batch_size = self.config.batch_size
-        n_epochs = 500
-        max_box_per_image = 14
-
-        time_str = time.strftime("%Y%m%d-%H%M%S")
-
-        # Generate stating point
-        patch_module = Patch(patch_size=self.config.patch_size, typ=self.config.start_patch, tanh=True).cuda()
-        # adv_patch_cpu = self.read_image("saved_patches/patchnew0.jpg")
-
-
-        # Sets up training and determines how long the training length will be
-        train_loader = torch.utils.data.DataLoader(InriaDataset(self.config.img_dir, self.config.lab_dir,
-                                                                max_box_per_image, img_size,
-                                                                shuffle=True),
-                                                   batch_size=batch_size,
-                                                   shuffle=True,
-                                                   num_workers=10)
-
-        # Sets the epoch length
-        self.epoch_length = len(train_loader)
-        print(f'One epoch is {len(train_loader)}')
-
-        # Creates the object which will optimize the patch, and sets the learning rate
-        optimizer = optim.Adam(patch_module.parameters(), lr=self.config.start_learning_rate, weight_decay=self.config.decay, amsgrad=True)
-
-        # Schedules tasks on the gpu to optimize performance
-        scheduler = self.config.scheduler_factory(optimizer)
-
-        et0 = time.time()
-        for epoch in range(n_epochs):
-        #for epoch in range(1):
-            # Sets the gradient inputs to zero
-            ep_det_loss = 0
-            ep_nps_loss = 0
-            ep_tv_loss = 0
-            ep_loss = 0
-            # ep_ssd_loss = 0
-            #ep_yolov2_loss = 0
-            ep_yolov3_loss = 0
-            bt0 = time.time()
-
-            # I have no fucking clue how long this is supposed to be running, probably for the epoch length? Needs
-            # More research
-            # TODO: note from Perry: yes this enumerates through some sort of file iterator for number of epochs
-            #         the tqdm shit is just for progress bar, except for the total argument
-            for i_batch, (img_batch, gt_boxes_batch) in tqdm(enumerate(train_loader), desc=f'Running epoch {epoch}',
-                                                                        total=self.epoch_length):
-                with autograd.detect_anomaly():
-                    # Optimizes everything to run on GPUs
-                    img_batch = img_batch.cuda()
-                    gt_boxes_batch_cpu = gt_boxes_batch
-                    gt_boxes_batch = gt_boxes_batch.cuda()
-                    # print('TRAINING EPOCH %i, BATCH %i'%(epoch, i_batch))
-                    adv_patch = patch_module()
-
-                    # Creates a patch transformer with a default grey patch. Can't find this object anywhere but most
-                    # Likely it allows the patch to be moved around on inputted images.
-                    # TODO: Find documentation for this object
-                    adv_batch_t = self.patch_transformer(adv_patch, gt_boxes_batch, img_size, do_rotate=True, rand_loc=False)
-
-                    # Can't find this object anywhere else, most likely allows the patch to be put into inputted photos
-                    # TODO: find documentation for this object
-                    # TODO: note from Perry: which object? patch_applier is from this file, F is torch.nn.functional
-                    p_img_batch = self.patch_applier(img_batch, adv_batch_t)
-                    #p_img_batch = F.interpolate(p_img_batch, (self.yolov2.height, self.yolov2.width))
-                    ssd_p_img_batch = F.interpolate(p_img_batch, (300, 300))
-                    ssd_p_img_batch = ssd_p_img_batch * 255 # "de"-normalize
-                    ssd_p_img_batch[:, 0, :, :] -= 123
-                    ssd_p_img_batch[:, 1, :, :] -= 117
-                    ssd_p_img_batch[:, 2, :, :] -= 104
-
-                    # TODO: Figure out exactly what these transforms are doing
-                    # TODO: note from Perry: these two lines seem to only be used for debugging purposes, commenting them out
-                    #img = p_img_batch[1, :, :,]
-                    #img = transforms.ToPILImage()(img.detach().cpu())
-                    # img.show()
-
-                    # Looks to be where the given patch is evaluated, however all these objects are not included within
-                    # The given darknet model. Documentation for the original needs to be found and researched
-                    #output_yolov2 = self.yolov2(p_img_batch)
-                    output_yolov3 = self.yolov3(p_img_batch)
-                    #output_ssd = self.ssd(ssd_p_img_batch)
-                    #max_prob_yolov2 = self.yolov2_output_extractor(output_yolov2)
-                    max_prob_yolov3 = self.yolov3_output_extractor(output_yolov3)
-                    # max_prob_ssd = self.ssd_output_extractor(output_ssd)
-
-                    non_printability_score = self.non_printability_calculator(adv_patch)
-                    patch_variation = self.total_variation(adv_patch)
-                    #patch_saturation = self.saturation_calculator(adv_patch)
-
-                    # Calculates the loss in the new patch, then mashes them all together
-                    printability_loss = non_printability_score*0.01
-                    patch_variation_loss = patch_variation*2.5
-                    #patch_saturation_loss = patch_saturation*1
-
-                    #detection_loss_yolov2 = torch.mean(max_prob_yolov2)
-                    detection_loss_yolov3 = torch.mean(max_prob_yolov3)
-                    # detection_loss_ssd = torch.mean(max_prob_ssd)
-
-                    #detection_loss = detection_loss_yolov2 + detection_loss_yolov3 + detection_loss_ssd
-                    detection_loss = detection_loss_yolov3 * 1
-                    loss = torch.tensor(0)
-                    loss += detection_loss
-                    #loss += printability_loss
-                    #loss += torch.max(patch_variation_loss, torch.tensor(0.1).cuda())
-                    #loss += patch_saturation_loss
-
-                    # for debugging purposes
-                    ep_det_loss += detection_loss.detach().cpu().numpy()
-                    ep_nps_loss += printability_loss.detach().cpu().numpy()
-                    ep_tv_loss += patch_variation_loss.detach().cpu().numpy()
-                    # ep_ssd_loss += detection_loss_ssd.detach().cpu().numpy()
-                    # ep_yolov2_loss += detection_loss_yolov2.detach().cpu().numpy()
-                    ep_yolov3_loss += detection_loss_yolov3.detach().cpu().numpy()
-                    ep_loss += loss.detach().cpu().numpy()
-
-                    # Calculates the gradient of the loss function
-                    loss.backward()
-
-                    #plot_grad_flow([("adv_patch_cpu",adv_patch_cpu)])
-                    #plt.show()
-
-                    # for debugging backprop of target losses
-                    mean_absolute_gradient = torch.mean(torch.abs(patch_module.params.grad))
-                    max_absolute_gradient = torch.max(torch.abs(patch_module.params.grad))
-
-                    # Performs one step in optimization of the patch
-                    optimizer.step()
-
-                    # Clears all gradients after each step. Default is to accumulate them, we don't want that
-                    optimizer.zero_grad()
-                    #adv_patch_cpu.data.clamp_(0,1)       # keep patch in image range # not needed due to patch module
-
-                    bt1 = time.time()
-                    iteration = self.epoch_length * epoch + i_batch
-
-                    # Writes all this data to the object's tensorboard item, which was initialized as 'writer'
-                    self.writer.add_scalar('batch/total_loss', loss.detach().cpu().numpy(), iteration)
-                    self.writer.add_scalar('batch/total_det_loss', detection_loss.detach().cpu().numpy(), iteration)
-                    #self.writer.add_scalar('batch/YOLOv2_loss', detection_loss_yolov2.detach().cpu().numpy(), iteration)
-                    #self.writer.add_scalar('batch/YOLOv3_loss', detection_loss_yolov3.detach().cpu().numpy(), iteration)
-                    #self.writer.add_scalar('batch/SSD_loss', detection_loss_ssd.detach().cpu().numpy(), iteration)
-                    self.writer.add_scalar('batch/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
-                    self.writer.add_scalar('batch/tv_loss', patch_variation_loss.detach().cpu().numpy(), iteration)
-                    self.writer.add_scalar('batch/epoch', epoch, iteration)
-                    self.writer.add_scalar('batch/learning_rate', optimizer.param_groups[0]["lr"], iteration)
-                    self.writer.add_scalar("batch/mean_absolute_gradient", mean_absolute_gradient.detach().cpu().numpy(), iteration)
-                    self.writer.add_scalar("batch/max_absolute_gradient", max_absolute_gradient.detach().cpu().numpy(), iteration)
-
-                    # If the training is over, add an endline character, else clearn the following variables
-                    if i_batch + 1 >= len(train_loader):
-                        print('\n')
-                    else:
-                        #del adv_batch_t, output_yolov2, max_prob_yolov2, detection_loss_yolov2, p_img_batch, printability_loss, patch_variation_loss, loss
-                        torch.cuda.empty_cache()
-                    bt0 = time.time()
-
-            # Calculate average loss over the course of training
-            et1 = time.time()
-            ep_det_loss = ep_det_loss/len(train_loader)
-            ep_nps_loss = ep_nps_loss/len(train_loader)
-            ep_tv_loss = ep_tv_loss/len(train_loader)
-            ep_loss = ep_loss/len(train_loader)
-            #ep_yolov2_loss = ep_yolov2_loss/len(train_loader)
-            ep_yolov3_loss = ep_yolov3_loss/len(train_loader)
-            #ep_ssd_loss = ep_ssd_loss/len(train_loader)
-            self.writer.add_scalar('loss/total_loss', ep_loss, epoch)
-            self.writer.add_scalar('loss/total_det_loss', ep_det_loss, epoch)
-            # self.writer.add_scalar('loss/YOLOv2_loss', ep_yolov2_loss, epoch)
-            # self.writer.add_scalar('loss/YOLOv3_loss', ep_yolov3_loss, epoch)
-            # self.writer.add_scalar('loss/SSD_loss', ep_ssd_loss, epoch)
-            self.writer.add_scalar('loss/printability_loss', ep_nps_loss, epoch)
-            self.writer.add_scalar('loss/tv_loss',ep_tv_loss, epoch)
-
-            # im = transforms.ToPILImage('RGB')(adv_patch_cpu)
-            # plt.imshow(im)
-            # plt.savefig(f'pics/{time_str}_{self.config.patch_name}_{epoch}.png')
-            # Output statistics and training time
-            scheduler.step(ep_loss)
-            print('  EPOCH NR: ', epoch),
-            print('EPOCH LOSS: ', ep_loss)
-            print('  DET LOSS: ', ep_det_loss)
-            print('  NPS LOSS: ', ep_nps_loss)
-            print('   TV LOSS: ', ep_tv_loss)
-            print('EPOCH TIME: ', et1-et0)
-            #del adv_batch_t, output_yolov2, max_prob_yolov2, detection_loss_yolov2, p_img_batch, printability_loss, patch_variation_loss, loss
-            #torch.cuda.empty_cache()
-            self.writer.add_image('patch', adv_patch.detach().cpu().numpy(), epoch)
-
-            et0 = time.time()
-
-        # At the end of training, save image
-        im = transforms.ToPILImage('RGB')(adv_patch.cpu())
-        plt.imshow(im)
-        plt.show()
-        # Specifies file to save trained patch to
-        im.save("saved_patches/patch_" + time.strftime("%Y-%m-%d_%H-%M-%S") + "-" + str(n_epochs) + "_epochs.jpg")
-
-    def read_image(self, path):
-        """
-        Read an input image to be used as a patch
-
-        :param path: Path to the image to be read.
-        :return: Returns the transformed patch as a pytorch Tensor.
-        """
-        patch_img = Image.open(path).convert('RGB')
-        tf = transforms.Resize((self.config.patch_size, self.config.patch_size))
-        patch_img = tf(patch_img)
-        tf = transforms.ToTensor()
-
-        adv_patch_cpu = tf(patch_img)
-        return adv_patch_cpu
-
-
 # Checks for the correct input length and then runs the trainer
 def main():
-    if len(sys.argv) != 2:
-        print('You need to supply (only) a configuration mode.')
-        print('Possible modes are:')
-        print(patch_config.patch_configs)
+    if not os.path.exists(FLAGS.log_dir):
+        os.makedirs(FLAGS.log_dir)
 
-    trainer = PatchTrainer(sys.argv[1])
-    trainer.train()
+    config = legacy_patch_config.patch_configs["paper_obj"]()
+    data_img_dir = "inria/Train/pos"
+    data_lab_dir = "inria/Train/pos/yolo-labels"
+    printable_vals_file = "non_printability/30values.txt"
+    patch_size = 300
+
+    # yolov2 = load_yolov2()
+    yolov3 = load_yolov3()
+    ssd = load_ssd()
+
+    patch_applier = PatchApplier().cuda()
+    patch_transformer = PatchTransformer().cuda()
+    # yolov2_output_extractor = Yolov2_Output_Extractor(0, 80, config).cuda()
+    yolov3_output_extractor = Yolov3_Output_Extractor(0, 80, config).cuda()
+    ssd_output_extractor = SSD_Output_Extractor(15)
+    non_printability_calculator = NPSCalculator(printable_vals_file, patch_size).cuda()
+    total_variation = TotalVariation().cuda()
+    saturation_calculator = SaturationCalculator().cuda()
+    # Property in which most data is written to, including the patch
+    writer = SummaryWriter(logdir=FLAGS.log_dir)
+
+    # Initialize some settings
+    img_size = 608  # dataloader configured with dimensions from yolov2
+    batch_size = FLAGS.bs
+    max_box_per_image = FLAGS.max_labs
+
+    # Generate stating point
+    patch_module = Patch(patch_size=config.patch_size, typ=FLAGS.start_patch, tanh=True).cuda()
+    # adv_patch_cpu = self.read_image("saved_patches/patchnew0.jpg")
+
+    # Sets up training and determines how long the training length will be
+    train_loader = torch.utils.data.DataLoader(InriaDataset(config.img_dir, config.lab_dir,
+                                                            max_box_per_image, img_size,
+                                                            shuffle=True),
+                                               batch_size=batch_size,
+                                               shuffle=True,
+                                               num_workers=10)
+
+    # Sets the epoch length
+    epoch_length = len(train_loader)
+    print(f'One epoch is {epoch_length}')
+
+    # Creates the object which will optimize the patch, and sets the learning rate
+    optimizer = optim.Adam(patch_module.parameters(), lr=FLAGS.lr)
+
+    # Schedules tasks on the gpu to optimize performance
+    scheduler = config.scheduler_factory(optimizer)
+
+    et0 = time.time()
+    for epoch in range(FLAGS.n_epochs):
+        # for epoch in range(1):
+        # Sets the gradient inputs to zero
+        ep_det_loss = 0
+        ep_nps_loss = 0
+        ep_tv_loss = 0
+        ep_loss = 0
+        # ep_ssd_loss = 0
+        # ep_yolov2_loss = 0
+        ep_yolov3_loss = 0
+        bt0 = time.time()
+
+        # I have no fucking clue how long this is supposed to be running, probably for the epoch length? Needs
+        # More research
+        # TODO: note from Perry: yes this enumerates through some sort of file iterator for number of epochs
+        #         the tqdm shit is just for progress bar, except for the total argument
+        for i_batch, (img_batch, gt_boxes_batch) in tqdm(enumerate(train_loader), desc=f'Running epoch {epoch}',
+                                                         total=epoch_length):
+            with autograd.detect_anomaly():
+                # Optimizes everything to run on GPUs
+                img_batch = img_batch.cuda()
+                gt_boxes_batch_cpu = gt_boxes_batch
+                gt_boxes_batch = gt_boxes_batch.cuda()
+                # print('TRAINING EPOCH %i, BATCH %i'%(epoch, i_batch))
+                adv_patch = patch_module()
+
+                # Creates a patch transformer with a default grey patch. Can't find this object anywhere but most
+                # Likely it allows the patch to be moved around on inputted images.
+                # TODO: Find documentation for this object
+                adv_batch_t = patch_transformer(adv_patch, gt_boxes_batch, img_size, do_rotate=True, rand_loc=False)
+
+                # Can't find this object anywhere else, most likely allows the patch to be put into inputted photos
+                # TODO: find documentation for this object
+                # TODO: note from Perry: which object? patch_applier is from this file, F is torch.nn.functional
+                p_img_batch = patch_applier(img_batch, adv_batch_t)
+                # p_img_batch = F.interpolate(p_img_batch, (yolov2.height, yolov2.width))
+                ssd_p_img_batch = F.interpolate(p_img_batch, (300, 300))
+                ssd_p_img_batch = ssd_p_img_batch * 255  # "de"-normalize
+                ssd_p_img_batch[:, 0, :, :] -= 123
+                ssd_p_img_batch[:, 1, :, :] -= 117
+                ssd_p_img_batch[:, 2, :, :] -= 104
+
+                # TODO: Figure out exactly what these transforms are doing
+                # TODO: note from Perry: these two lines seem to only be used for debugging purposes, commenting them out
+                # img = p_img_batch[1, :, :,]
+                # img = transforms.ToPILImage()(img.detach().cpu())
+                # img.show()
+
+                # Looks to be where the given patch is evaluated, however all these objects are not included within
+                # The given darknet model. Documentation for the original needs to be found and researched
+                # output_yolov2 = yolov2(p_img_batch)
+                output_yolov3 = yolov3(p_img_batch)
+                # output_ssd = ssd(ssd_p_img_batch)
+                # max_prob_yolov2 = yolov2_output_extractor(output_yolov2)
+                max_prob_yolov3 = yolov3_output_extractor(output_yolov3)
+                # max_prob_ssd = ssd_output_extractor(output_ssd)
+
+                non_printability_score = non_printability_calculator(adv_patch)
+                patch_variation = total_variation(adv_patch)
+                # patch_saturation = saturation_calculator(adv_patch)
+
+                # Calculates the loss in the new patch, then mashes them all together
+                printability_loss = non_printability_score * 0.01
+                patch_variation_loss = patch_variation * 2.5
+                # patch_saturation_loss = patch_saturation*1
+
+                # detection_loss_yolov2 = torch.mean(max_prob_yolov2)
+                detection_loss_yolov3 = torch.mean(max_prob_yolov3)
+                # detection_loss_ssd = torch.mean(max_prob_ssd)
+
+                # detection_loss = detection_loss_yolov2 + detection_loss_yolov3 + detection_loss_ssd
+                detection_loss = detection_loss_yolov3 * 1
+                loss = torch.tensor(0)
+                loss = detection_loss
+                # loss = loss + printability_loss
+                # loss = loss + torch.max(patch_variation_loss, torch.tensor(0.1).cuda())
+                # loss = loss + patch_saturation_loss
+
+                # for debugging purposes
+                ep_det_loss += detection_loss.detach().cpu().numpy()
+                ep_nps_loss += printability_loss.detach().cpu().numpy()
+                ep_tv_loss += patch_variation_loss.detach().cpu().numpy()
+                # ep_ssd_loss += detection_loss_ssd.detach().cpu().numpy()
+                # ep_yolov2_loss += detection_loss_yolov2.detach().cpu().numpy()
+                ep_yolov3_loss += detection_loss_yolov3.detach().cpu().numpy()
+                ep_loss += loss.detach().cpu().numpy()
+
+                # Calculates the gradient of the loss function
+                loss.backward()
+
+                # plot_grad_flow([("adv_patch_cpu",adv_patch_cpu)])
+                # plt.show()
+
+                # for debugging backprop of target losses
+                mean_absolute_gradient = torch.mean(torch.abs(patch_module.params.grad))
+                max_absolute_gradient = torch.max(torch.abs(patch_module.params.grad))
+
+                # Performs one step in optimization of the patch
+                optimizer.step()
+
+                # Clears all gradients after each step. Default is to accumulate them, we don't want that
+                optimizer.zero_grad()
+                # adv_patch_cpu.data.clamp_(0,1)       # keep patch in image range # not needed due to patch module
+
+                bt1 = time.time()
+                iteration = epoch_length * epoch + i_batch
+
+                # Writes all this data to the object's tensorboard item, which was initialized as 'writer'
+                writer.add_scalar('batch/total_loss', loss.detach().cpu().numpy(), iteration)
+                writer.add_scalar('batch/total_det_loss', detection_loss.detach().cpu().numpy(), iteration)
+                # writer.add_scalar('batch/YOLOv2_loss', detection_loss_yolov2.detach().cpu().numpy(), iteration)
+                # writer.add_scalar('batch/YOLOv3_loss', detection_loss_yolov3.detach().cpu().numpy(), iteration)
+                # writer.add_scalar('batch/SSD_loss', detection_loss_ssd.detach().cpu().numpy(), iteration)
+                writer.add_scalar('batch/printability_loss', printability_loss.detach().cpu().numpy(), iteration)
+                writer.add_scalar('batch/tv_loss', patch_variation_loss.detach().cpu().numpy(), iteration)
+                writer.add_scalar('batch/epoch', epoch, iteration)
+                writer.add_scalar('batch/learning_rate', optimizer.param_groups[0]["lr"], iteration)
+                writer.add_scalar("batch/mean_absolute_gradient", mean_absolute_gradient.detach().cpu().numpy(),
+                                  iteration)
+                writer.add_scalar("batch/max_absolute_gradient", max_absolute_gradient.detach().cpu().numpy(),
+                                  iteration)
+
+                # If the training is over, add an endline character, else clearn the following variables
+                if i_batch + 1 >= len(train_loader):
+                    print('\n')
+                else:
+                    # del adv_batch_t, output_yolov2, max_prob_yolov2, detection_loss_yolov2, p_img_batch, printability_loss, patch_variation_loss, loss
+                    torch.cuda.empty_cache()
+                bt0 = time.time()
+
+        # Calculate average loss over the course of training
+        et1 = time.time()
+        ep_det_loss = ep_det_loss / len(train_loader)
+        ep_nps_loss = ep_nps_loss / len(train_loader)
+        ep_tv_loss = ep_tv_loss / len(train_loader)
+        ep_loss = ep_loss / len(train_loader)
+        # ep_yolov2_loss = ep_yolov2_loss/len(train_loader)
+        ep_yolov3_loss = ep_yolov3_loss / len(train_loader)
+        # ep_ssd_loss = ep_ssd_loss/len(train_loader)
+        writer.add_scalar('loss/total_loss', ep_loss, epoch)
+        writer.add_scalar('loss/total_det_loss', ep_det_loss, epoch)
+        # writer.add_scalar('loss/YOLOv2_loss', ep_yolov2_loss, epoch)
+        # writer.add_scalar('loss/YOLOv3_loss', ep_yolov3_loss, epoch)
+        # writer.add_scalar('loss/SSD_loss', ep_ssd_loss, epoch)
+        writer.add_scalar('loss/printability_loss', ep_nps_loss, epoch)
+        writer.add_scalar('loss/tv_loss', ep_tv_loss, epoch)
+
+        # im = transforms.ToPILImage('RGB')(adv_patch_cpu)
+        # plt.imshow(im)
+        # plt.savefig(f'pics/{time_str}_{config.patch_name}_{epoch}.png')
+        # Output statistics and training time
+        scheduler.step(ep_loss)
+
+        print('  EPOCH NR: ', epoch),
+        print('EPOCH LOSS: ', ep_loss)
+        print('  DET LOSS: ', ep_det_loss)
+        print('  NPS LOSS: ', ep_nps_loss)
+        print('   TV LOSS: ', ep_tv_loss)
+        print('EPOCH TIME: ', et1 - et0)
+        # del adv_batch_t, output_yolov2, max_prob_yolov2, detection_loss_yolov2, p_img_batch, printability_loss, patch_variation_loss, loss
+        # torch.cuda.empty_cache()
+        writer.add_image('patch', adv_patch.detach().cpu().numpy(), epoch)
+
+        et0 = time.time()
+
+    # At the end of training, save image
+    im = transforms.ToPILImage('RGB')(adv_patch.cpu())
+    # Specifies file to save trained patch to
+    im.save(os.path.join(FLAGS.log_dir, "patch.png"), "PNG")
 
 
 if __name__ == '__main__':
