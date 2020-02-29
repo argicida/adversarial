@@ -25,6 +25,7 @@ from matplotlib import patches
 VISUAL_DEBUG = False
 PRINT_NMS_OUTPUT = False
 
+TEST_DIR = "inria/Test/pos"
 LABELS_DIR = "./testing"
 
 def main():
@@ -32,7 +33,6 @@ def main():
     ssd = load_ssd(0)
     yolov3 = load_yolov3(0)
 
-    test_imgdir = "inria/Test/pos"
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
     patchfile = "saved_patches/perry_08-26_500_epochs.jpg"
 
@@ -65,11 +65,11 @@ def main():
                   ['ssd', ssd_img_size_sqrt**2] + [0 for _ in range(num_numerical_cols)]]
     statistics = pd.DataFrame(statistics, columns=cols)
 
-    for imgfile in os.listdir(test_imgdir):
+    for imgfile in os.listdir(TEST_DIR):
         if imgfile.endswith('.jpg') or imgfile.endswith('.png'):
             image_name = os.path.splitext(imgfile)[0]    # image image_name w/o extension
             # open image and adjust to yolo input size
-            imgfile = os.path.abspath(os.path.join(test_imgdir, imgfile))
+            imgfile = os.path.abspath(os.path.join(TEST_DIR, imgfile))
             img = Image.open(imgfile).convert('RGB')
             w,h = img.size
             # ensure image is square
@@ -194,7 +194,7 @@ def bitwise_boxes_area_union(x0_y0_width_height_human_dataframe:pd.DataFrame, im
 
 
 def generate_label_filepath(target:str, image_name:str) -> str:
-    return os.path.abspath(os.path.join(LABELS_DIR,'clean/', target + '-labels/', image_name + '.txt'))
+    return os.path.abspath(os.path.join(TEST_DIR,'clean/', target + '-labels/', image_name + '.txt'))
 
 
 def save_architecture_ground_truths_if_none_exist(x0_y0_width_height_human_dataframe_clean:pd.DataFrame,
