@@ -36,8 +36,8 @@ def main():
     # To change the patch you're testing, change the patchfile variable to the path of the desired patch
     patchfile = "saved_patches/perry_08-26_500_epochs.jpg"
 
-    yolov2_img_size_sqrt = yolov2.height
-    yolov3_img_size_sqrt = yolov2_img_size_sqrt
+    yolov2_img_size_sqrt = 608
+    yolov3_img_size_sqrt = 608
     ssd_img_size_sqrt = 300
 
     patch_size = 300
@@ -400,6 +400,25 @@ def load_ssd(device) -> Callable:
     single_image_predictor = create_vgg_ssd_predictor(ssd, nms_method="hard", device=device)
     predict_function = single_image_predictor.predict
     return predict_function
+
+
+DETECTOR_LOADERS_N_WRAPPERS = {
+    'yolov2': (load_yolov2, wrapper_yolov2),
+    'ssd': (load_ssd, wrapper_ssd),
+    'yolov3': (load_yolov3, wrapper_yolov3)
+}
+
+
+DETECTOR_INPUT_SIZES = {
+    'yolov2': 608,
+    'ssd': 300,
+    'yolov3': 608
+}
+
+
+SUPPORTED_TEST_DETECTORS = []
+for supported in DETECTOR_LOADERS_N_WRAPPERS:
+    SUPPORTED_TEST_DETECTORS.append(supported)
 
 
 if __name__ == '__main__':

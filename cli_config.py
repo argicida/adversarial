@@ -3,7 +3,8 @@
 from absl import flags
 from datetime import datetime
 
-from detectors_manager import SUPPORTED_TRAIN_DETECTORS, SUPPORTED_TEST_DETECTORS
+from detectors_manager import SUPPORTED_TRAIN_DETECTORS
+from test_patch import SUPPORTED_TEST_DETECTORS
 
 FLAGS = flags.FLAGS
 
@@ -23,7 +24,7 @@ flags.DEFINE_boolean(name="logits_cost", default=True, help="whether to use logi
 flags.DEFINE_enum(name="start_patch", default="grey", enum_values=["grey", "random"], help="start with grey or "
                                                                                            "random patch")
 
-# testing ssettings
+# testing settings
 for detector_name in SUPPORTED_TEST_DETECTORS:
   flags.DEFINE_boolean(name="test_%s"%detector_name, default=False,
                        help="whether to test patch against %s"%detector_name)

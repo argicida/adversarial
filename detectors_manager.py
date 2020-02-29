@@ -19,7 +19,6 @@ SUPPORTED_TRAIN_DETECTORS = {'yolov2':3, # 1: class only, 2: object only, 3: obj
                              'ssd':1, # 1: class
                              'yolov3':3 # 1: class only, 2: object only, 3: object and class
                             }
-SUPPORTED_TEST_DETECTORS = {'yolov2', 'ssd', 'yolov3'}
 
 
 class Manager:

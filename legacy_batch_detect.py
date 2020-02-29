@@ -45,7 +45,3 @@ if __name__ == '__main__':
                     height = box[3]
                     textfile.write(f'{cls_id} {x_center} {y_center} {width} {height}\n')
             textfile.close()
-                    
-                    
-                    
-                    

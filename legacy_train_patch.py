@@ -18,12 +18,10 @@ import torch.nn.functional as F
 from torch import autograd
 from torchvision import transforms
 
-from PIL import Image
-from matplotlib.lines import Line2D
 from tensorboardX import SummaryWriter
 
 from torch.utils.data import Dataset
-from load_data import InriaDataset
+from inria import LegacyYolov2InriaDataset
 from patch_utilities import Patch, PatchApplier, PatchTransformer, TotalVariation, NPSCalculator, SaturationCalculator
 
 #yolov2
@@ -242,9 +240,9 @@ def main():
     # adv_patch_cpu = self.read_image("saved_patches/patchnew0.jpg")
 
     # Sets up training and determines how long the training length will be
-    train_loader = torch.utils.data.DataLoader(InriaDataset(config.img_dir, config.lab_dir,
-                                                            max_box_per_image, img_size,
-                                                            shuffle=True),
+    train_loader = torch.utils.data.DataLoader(LegacyYolov2InriaDataset(config.img_dir, config.lab_dir,
+                                                                        max_box_per_image, img_size,
+                                                                        shuffle=True),
                                                batch_size=batch_size,
                                                shuffle=True,
                                                num_workers=10)

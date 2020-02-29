@@ -5,10 +5,10 @@ simulation for when we have many more target architectures
 """
 
 import PIL
-import load_data
+import inria
 from tqdm import tqdm
 
-from load_data import *
+from inria import *
 import gc
 import matplotlib.pyplot as plt
 from torch import autograd
@@ -74,8 +74,8 @@ class PatchTrainer(object):
         adv_patch_cpu.requires_grad_(True)
 
         # Sets up training and determines how long the training length will be
-        train_loader = torch.utils.data.DataLoader(InriaDataset(self.config.img_dir, self.config.lab_dir, max_lab, img_size,
-                                                                shuffle=True),
+        train_loader = torch.utils.data.DataLoader(LegacyYolov2InriaDataset(self.config.img_dir, self.config.lab_dir, max_lab, img_size,
+                                                                            shuffle=True),
                                                    batch_size=batch_size,
                                                    shuffle=True,
                                                    num_workers=10)
