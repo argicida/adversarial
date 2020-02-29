@@ -35,7 +35,7 @@ flags.DEFINE_integer(name="max_labs", default=14, help="maximum number of boundi
 
 # logging settings
 _init_time = datetime.now()
-flags.DEFINE_string(name="log_dir",
+flags.DEFINE_string(name="logdir",
                     default="logs/%s%s"%(_init_time.astimezone().tzinfo.tzname(None),
                                          _init_time.strftime('%Y%m%d_%H_%M_%S_%f')),
                     help="directory to store logs, images, and statistics")

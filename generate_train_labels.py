@@ -1,31 +1,40 @@
-from cli_config import FLAGS
+from absl import app, flags
 from test_patch import SUPPORTED_TEST_DETECTORS, DETECTOR_LOADERS_N_WRAPPERS, DETECTOR_INPUT_SIZES
 from PIL import Image
+from tqdm import tqdm
 import os
 import fnmatch
 
+for detector_name in SUPPORTED_TEST_DETECTORS:
+  flags.DEFINE_boolean(name=detector_name, default=False,
+                       help="whether to generate labels for %s"%detector_name)
+FLAGS = flags.FLAGS
 
-def main():
+def main(argv):
   train_data_dir = "inria/Train/pos"
   flags_dict = FLAGS.flag_values_dict()
   detectors = {}
   detector_wrappers = {}
   for candidate in SUPPORTED_TEST_DETECTORS:
-    if flags_dict['test_%s'%candidate]:
+    if flags_dict[candidate]:
       loader_fn, wrapper_fn = DETECTOR_LOADERS_N_WRAPPERS[candidate]
       cuda_device_id = 0
       detectors[candidate] = loader_fn(cuda_device_id)
-      detector_wrappers[wrapper_fn] = wrapper_fn
+      detector_wrappers[candidate] = wrapper_fn
+      lab_dir = os.path.join(train_data_dir, "%s%s" % (candidate, "-labels"))
+      if not os.path.exists(lab_dir):
+        os.makedirs(lab_dir)
   img_names = fnmatch.filter(os.listdir(train_data_dir), '*.png') + fnmatch.filter(os.listdir(train_data_dir), '*.jpg')
-  print("Train Set Size: %s"%len(img_names))
-  for img_name in img_names:
+  print("Number of Pics in Train Set: %s"%len(img_names))
+  for img_name in tqdm(img_names):
     img = Image.open(os.path.join(train_data_dir, img_name)).convert('RGB')
-    for detector_name in detectors:
-      lab_path = os.path.join(train_data_dir, "%s%s"%(detector_name, "-labels"),
-                              img_name.replace('.jpg', '.txt').replace('.png', '.txt'))
-      input_size = DETECTOR_INPUT_SIZES[detector_name]
-      detector = detectors[detector_name]
-      wrapper_fn = detector_wrappers[detector_name]
+    txt = img_name.replace('.jpg', '.txt').replace('.png', '.txt')
+    for detector_id in detectors:
+      lab_dir = os.path.join(train_data_dir, "%s%s" % (detector_id, "-labels"))
+      lab_path = os.path.join(lab_dir, txt)
+      input_size = DETECTOR_INPUT_SIZES[detector_id]
+      detector = detectors[detector_id]
+      wrapper_fn = detector_wrappers[detector_id]
       resized_img = img.resize((input_size, input_size))
       df = wrapper_fn(resized_img, detector, input_size, input_size) # ["x0", "y0", "w", 'h', 'human']
       textfile = open(lab_path, 'w+')
@@ -41,5 +50,5 @@ def main():
 
 
 if __name__ == "__main__":
-  main()
+  app.run(main)
 

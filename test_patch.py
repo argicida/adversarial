@@ -322,8 +322,7 @@ def wrapper_ssd(image, net, input_w, input_h) -> pd.DataFrame:
     else:
         print("unknown image type")
         exit(-1)
-    cuda_device = net.device
-    input_means = torch.tensor([123, 117, 104], dtype=torch.float, device=cuda_device).unsqueeze(-1).unsqueeze(-1)
+    input_means = torch.tensor([123, 117, 104], dtype=torch.float).unsqueeze(-1).unsqueeze(-1).cuda()
     tensor = tensor - input_means
     if torch.cuda.is_available():
         tensor = tensor.cuda()
