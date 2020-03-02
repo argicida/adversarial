@@ -81,7 +81,6 @@ def main(argv):
           else:
             assert False
           target_confidences.append(extracted_confidence)
-          print(target_name, extracted_confidence)
           epoch_unweighted_detector_loss_sum[target_name] += extracted_confidence.detach().cpu().numpy()
         # [num_target]
         target_confidences = torch.stack(target_confidences)
