@@ -1,3 +1,6 @@
+# logging
+logs/
+
 # slurm output
 blackbox.err
 blackbox.out
@@ -26,7 +29,7 @@ weights/
 implementations/ssd/models/vgg16-ssd-mp-0_7726.pth
 implementations/yolov3/weights
 
-# tensorboard?
+# legacy tensorboard files
 runs/
 
 # Byte-compiled / optimized / DLL files

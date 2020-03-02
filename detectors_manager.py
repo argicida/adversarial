@@ -11,7 +11,7 @@ from implementations.yolov3.models import Darknet as Yolov3
 from implementations.ssd.vision.ssd.vgg_ssd import create_vgg_ssd
 from implementations.ssd.vision.utils.box_utils import convert_locations_to_boxes
 
-from patch_utilities import PatchTransformApplier
+from patch_utilities import SquarePatchTransformApplier
 
 
 # some of these have multiple output types, such as class confidence and object confidence, so multiple setting
@@ -22,48 +22,66 @@ SUPPORTED_TRAIN_DETECTORS = {'yolov2':3, # 1: class only, 2: object only, 3: obj
 
 
 class Manager:
-  def __init__(self, detector_device_mapping:dict, train_detector_settings:dict, test_detectors:list,
-               activate_logits:bool=False):
+  def __init__(self, detector_device_mapping:dict, train_detector_settings:dict, activate_logits:bool=False,
+               debug_autograd:bool=False, debug_device:bool=False, test_detectors:list=None): # testing currently not supported
     # all detectors in train_detector_settings and test_detectors must be mapped to a device in detector_device_mapping
     self.train_detector_settings = train_detector_settings
-    self.test_detectors = test_detectors
     self.detector_instances = {}
+    self.output_process_fns = {}
     self.patch_appliers_by_device = {}
+    self.debug_autograd = debug_autograd
+    self.debug_device = debug_device
     for detector_name, cuda_device_id in detector_device_mapping.items():
-      self.detector_instances[detector_name] = _create_detector(detector_name, device=cuda_device_id,
-                                                                activate_logits=activate_logits)
+      target_setting = train_detector_settings[detector_name]
+      detector = _create_detector(detector_name, device=cuda_device_id, activate_logits=activate_logits)
+      self.detector_instances[detector_name] = detector
       if cuda_device_id not in self.patch_appliers_by_device:
-        self.patch_appliers_by_device[cuda_device_id] = PatchTransformApplier(cuda_device_id)
+        self.patch_appliers_by_device[cuda_device_id] = SquarePatchTransformApplier(cuda_device_id)
+      if target_setting == 1:
+        self.output_process_fns[detector_name] = [detector.raw_output_to_people_conf_cxcy]
+      elif target_setting == 2:
+        self.output_process_fns[detector_name] = [detector.raw_output_to_objects_conf_cxcy]
+      elif target_setting == 3:
+        self.output_process_fns[detector_name] = [detector.raw_output_to_people_conf_cxcy,
+                                                  detector.raw_output_to_objects_conf_cxcy]
+      else:
+        assert False, "Invalid Detector Setting: %s %i"%(detector_name, target_setting)
 
-  def train_forward_propagate(self, input_images:torch.Tensor, patch_2d:torch.Tensor=None, labels_by_target:dict=None) \
+  def _conf_grad_ok(self, confidences:torch.Tensor):
+    return (not self.debug_autograd) or (confidences.requires_grad and (confidences.grad_fn is not None))
+
+  def train_forward_propagate(self, input_images:torch.Tensor, labels_by_target:dict, patch_2d:torch.Tensor=None) \
         -> dict:
     # returns a dict of results, containing one or more logit maps for each target depending on setting
-    # labels_by_target should contain tensors of labels for each target
+    # , as well as a copy a label for each target on their respective gpu device
     # pass in None for patch parameter if input_images are rendered from 3D model
-    if patch_2d: assert labels_by_target is not None
+    patching_enabled = (patch_2d is not None)
     output_maps = {}
     copies_of_inputs_by_device = {}
     for target_name, target_setting in self.train_detector_settings.items():
       target = self.detector_instances[target_name]
       labels = labels_by_target[target_name]
-
+      target_cuda_device = torch.device('cuda:%i' % target.device)
       if target.device not in copies_of_inputs_by_device:
-        device = torch.device('cuda:%i'%target.device)
-        patch_copy = patch_2d.cuda(device=device, non_blocking=True) if patch_2d else None
-        images_copy = input_images.cuda(device=device, non_blocking=True)
+        patch_copy = patch_2d.cuda(device=target_cuda_device, non_blocking=True) if patching_enabled else None
+        images_copy = input_images.cuda(device=target_cuda_device, non_blocking=True)
         copies_of_inputs_by_device[target.device] = (images_copy, patch_copy)
       else:
         images_copy, patch_copy = copies_of_inputs_by_device[target.device]
-      detector_input = self.patch_appliers_by_device[target.device](patch_copy, images_copy, labels) \
-          if patch_2d else images_copy
+      labels_copy = labels.cuda(device=target_cuda_device, non_blocking=True)
+      detector_input = self.patch_appliers_by_device[target.device](patch_copy, images_copy, labels_copy) \
+          if patching_enabled else images_copy
 
-      logits = target.batched_forward_to_raw_output(detector_input)
-      if target_setting == 1:
-        output_maps[target_name] = [target.raw_output_to_persons(logits)]
-      elif target_setting == 2:
-        output_maps[target_name] = [target.raw_output_to_objects(logits)]
-      else:
-        output_maps[target_name] = [target.raw_output_to_persons(logits), target.raw_output_to_objects(logits)]
+      raw_output = target.batched_forward_to_raw_output(detector_input)
+
+      outputs = []
+      for fn in self.output_process_fns[target_name]:
+        conf, cxcy = fn(raw_output)
+        assert self._conf_grad_ok(conf), "%s gradients"%target_name
+        assert (not self.debug_device) or ((conf.device == target_cuda_device) and (cxcy.device == target_cuda_device)),\
+            "%s output device inconsistent"%target_name
+        outputs.append((conf, cxcy, labels_copy))
+      output_maps[target_name] = outputs
     return output_maps
 
   def single_image_detection_on_targets(self, square_padded_img:Image) -> dict:
@@ -97,10 +115,10 @@ class _AbstractDetector:
     # preprocess images for the particular model
     raise NotImplementedError
 
-  def raw_output_to_objects(self, raw_output):
+  def raw_output_to_objects_conf_cxcy(self, raw_output):
     raise NotImplementedError
 
-  def raw_output_to_persons(self, raw_output):
+  def raw_output_to_people_conf_cxcy(self, raw_output):
     raise NotImplementedError
 
   def single_image_nms_predictions(self, single_square_image:Image) -> np.ndarray:
@@ -112,11 +130,11 @@ class _AbstractDetector:
 def _create_detector(architecture:str, device:int, activate_logits:bool) -> _AbstractDetector:
   # factory method
   init_funcs = {
-    'yolov2': _AbstractYolov2.__init__,
-    'ssd': _AbstractSSD.__init__,
-    'yolov3': _AbstractYolov3.__init__
+    'yolov2': lambda: _AbstractYolov2(device, activate_logits),
+    'ssd': lambda: _AbstractSSD(device, activate_logits),
+    'yolov3': lambda: _AbstractYolov3(device, activate_logits)
   }
-  return (init_funcs[architecture])(device, activate_logits)
+  return (init_funcs[architecture])()
 
 
 class _AbstractYolov2(_AbstractDetector):
@@ -151,22 +169,25 @@ class _AbstractYolov2(_AbstractDetector):
     # [batch, h*w*num_priors, (num_non_cls_preds + num_cls)]
     batched_logits = batched_logits.view(b, h*w*self.num_priors, self.num_non_cls_preds + self.num_cls)
 
-    grid_x = torch.linspace(0, w-1, w).repeat(h,1).repeat(b*self.num_priors, 1, 1).view(b, self.num_priors*h*w).cuda()
-    grid_y = torch.linspace(0, h-1, h).repeat(w,1).t().repeat(b*self.num_priors, 1, 1).view(b, self.num_priors*h*w).cuda()
+    # [batch, h * w * num_priors]
+    grid_x = torch.linspace(0, w-1, w).repeat(h,1).repeat(b*self.num_priors, 1, 1).view(b, self.num_priors*h*w)\
+      .cuda(torch.device("cuda:%i"%self.device))
+    grid_y = torch.linspace(0, h-1, h).repeat(w,1).t().repeat(b*self.num_priors, 1, 1).view(b, self.num_priors*h*w)\
+      .cuda(torch.device("cuda:%i"%self.device))
+    # [batch, h * w * num_priors, 2]
     grid_xy = torch.stack([grid_x, grid_y], dim=2)
-
-    cx_cy = torch.sigmoid(batched_logits[:, 0:2])
+    cx_cy = torch.sigmoid(batched_logits[:, :, 0:2])
     cx_cy = cx_cy + grid_xy
     return batched_logits, cx_cy
 
-  def raw_output_to_objects(self, raw_output):
+  def raw_output_to_objects_conf_cxcy(self, raw_output):
     logits, cx_cy = raw_output
     # [batch, h*w*num_priors]
     object_logits = logits[:, :, 4]
     objects = torch.sigmoid(object_logits) if self.activate_logits else object_logits
     return objects, cx_cy
 
-  def raw_output_to_persons(self, raw_output):
+  def raw_output_to_people_conf_cxcy(self, raw_output):
     logits, cx_cy = raw_output
     # [batch, h*w*num_priors, num_cls]
     class_logits = logits[:, :, self.num_non_cls_preds:self.num_non_cls_preds + self.num_cls]
@@ -211,10 +232,10 @@ class _AbstractSSD(_AbstractDetector):
     cx_cy = locations[:, :, 0:2]
     return confidences, cx_cy
 
-  def raw_output_to_objects(self, raw_output):
+  def raw_output_to_objects_conf_cxcy(self, raw_output):
     raise NotImplementedError
 
-  def raw_output_to_persons(self, raw_output):
+  def raw_output_to_people_conf_cxcy(self, raw_output):
     # confidences: [b, num_priors=4*sum(layersize), num_classes]
     # locations: [b, num_priors=4*sum(layersize), 4]
     confidences, cx_cy = raw_output
@@ -251,7 +272,7 @@ class _AbstractYolov3(_AbstractDetector):
   def _batched_preprocess(self, batched_images: torch.Tensor) -> torch.Tensor:
     return F.interpolate(batched_images, (608, 608))
 
-  def raw_output_to_objects(self, raw_output: torch.Tensor):
+  def raw_output_to_objects_conf_cxcy(self, raw_output: torch.Tensor):
     activated_objects = raw_output[:, :, 4]
     cx_cy = raw_output[:, :, 0:2]
     if self.activate_logits:
@@ -259,7 +280,7 @@ class _AbstractYolov3(_AbstractDetector):
     else:
       return self._inverse_sigmoid(activated_objects), cx_cy
 
-  def raw_output_to_persons(self, raw_output: torch.Tensor):
+  def raw_output_to_people_conf_cxcy(self, raw_output: torch.Tensor):
     activated_persons = raw_output[:, :, self.num_non_cls_preds + self.person_cls_id]
     cx_cy = raw_output[:, :, 0:2]
     if self.activate_logits:

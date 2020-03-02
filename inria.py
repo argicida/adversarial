@@ -24,15 +24,16 @@ class InriaDataset(Dataset):
 
     """
 
-    def __init__(self, img_dir, lab_dir, max_lab, imgsize, target_names, shuffle=True, offset_labels=False):
+    def __init__(self, img_dir:str, max_lab:int, imgsize:int, target_names:list, shuffle=True, offset_labels=False):
         n_png_images = len(fnmatch.filter(os.listdir(img_dir), '*.png'))
         n_jpg_images = len(fnmatch.filter(os.listdir(img_dir), '*.jpg'))
         n_images = n_png_images + n_jpg_images
-        n_labels = len(fnmatch.filter(os.listdir(lab_dir), '*.txt'))
-        assert n_images == n_labels, "Number of images and number of labels don't match"
+        n_labels = sum([len(fnmatch.filter(os.listdir(os.path.join(img_dir, "%s-labels"%target_name)), '*.txt'))
+                        for target_name in target_names])
+        assert n_images * len(target_names) == n_labels, "Number of images and number of labels don't match, %i, %i"\
+                                                         %(n_images, n_labels)
         self.len = n_images
         self.img_dir = img_dir
-        self.lab_dir = lab_dir
         self.imgsize = imgsize
         img_names = fnmatch.filter(os.listdir(img_dir), '*.png') + fnmatch.filter(os.listdir(img_dir), '*.jpg')
         self.img_paths = [os.path.join(self.img_dir, img_name) for img_name in img_names]
@@ -41,7 +42,7 @@ class InriaDataset(Dataset):
         for target_name in target_names:
             self.target_lab_paths[target_name] = []
         for target_name in target_names:
-            lab_paths = [os.path.join(self.lab_dir, "%s%s"%(target_name, "-labels"), img_name)
+            lab_paths = [os.path.join(self.img_dir, "%s%s"%(target_name, "-labels"), img_name)
                              .replace('.jpg', '.txt').replace('.png', '.txt')
                          for img_name in img_names]
             self.target_lab_paths[target_name] = lab_paths
@@ -109,7 +110,7 @@ class InriaDataset(Dataset):
             padded_lab = F.pad(lab, [0, 0, 0, pad_size], value=1)
         else:
             padded_lab = lab
-        return padded_lab
+        return padded_lab[0:self.max_n_labels]
 
 
 class LegacyYolov2InriaDataset(Dataset):

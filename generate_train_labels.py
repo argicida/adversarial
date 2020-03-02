@@ -8,10 +8,11 @@ import fnmatch
 for detector_name in SUPPORTED_TEST_DETECTORS:
   flags.DEFINE_boolean(name=detector_name, default=False,
                        help="whether to generate labels for %s"%detector_name)
+flags.DEFINE_string(name="inria_dir", default="inria/Train/pos", help="directory storing the people pics for INRIA")
 FLAGS = flags.FLAGS
 
 def main(argv):
-  train_data_dir = "inria/Train/pos"
+  train_data_dir = FLAGS.inria_dir
   flags_dict = FLAGS.flag_values_dict()
   detectors = {}
   detector_wrappers = {}

@@ -22,7 +22,7 @@ from tensorboardX import SummaryWriter
 
 from torch.utils.data import Dataset
 from inria import LegacyYolov2InriaDataset
-from patch_utilities import Patch, PatchApplier, PatchTransformer, TotalVariation, NPSCalculator, SaturationCalculator
+from patch_utilities import SquarePatch, PatchApplier, SquarePatchTransformer, TotalVariationCalculator, NPSCalculator, SaturationCalculator
 
 #yolov2
 from darknet import Darknet
@@ -72,31 +72,6 @@ class Yolov2_Output_Extractor(nn.Module):
         max_conf, max_conf_idx = torch.max(confs_if_object, dim=1)
 
         return max_conf
-
-
-class Patch(nn.Module):
-    def __init__(self, patch_size, typ="grey", tanh=True):
-        super(Patch, self).__init__()
-        if typ == 'grey':
-            # when params are 0. the rgbs are 0.5
-            self.params = nn.Parameter.__new__(torch.full((3, patch_size, patch_size), 0))
-        elif typ == 'random':
-            # uniform distribution range from -2 to -2
-            self.params = nn.Parameter.__new__((torch.rand((3, patch_size, patch_size))*2 - 1) * 2)
-        # both options force the patch to have valid rgb values
-        if tanh:
-            self.constraint = self.tanh_constraint
-        else:
-            self.constraint = self.sigmoid_constraint
-
-    def tanh_constraint(self, params):
-        return 0.5 * (torch.tanh(params) + 1)
-
-    def sigmoid_constraint(self, params):
-        return torch.sigmoid(params)
-
-    def forward(self):
-        return self.constraint(self.params)
 
 
 def load_yolov2(device=0):
@@ -206,8 +181,8 @@ class SSD_Output_Extractor(nn.Module):
 
 # Checks for the correct input length and then runs the trainer
 def main():
-    if not os.path.exists(FLAGS.log_dir):
-        os.makedirs(FLAGS.log_dir)
+    if not os.path.exists(FLAGS.logdir):
+        os.makedirs(FLAGS.logdir)
 
     config = legacy_patch_config.patch_configs["paper_obj"]()
     data_img_dir = "inria/Train/pos"
@@ -220,15 +195,15 @@ def main():
     ssd = load_ssd()
 
     patch_applier = PatchApplier().cuda()
-    patch_transformer = PatchTransformer().cuda()
+    patch_transformer = SquarePatchTransformer().cuda()
     # yolov2_output_extractor = Yolov2_Output_Extractor(0, 80, config).cuda()
     yolov3_output_extractor = Yolov3_Output_Extractor(0, 80, config).cuda()
     ssd_output_extractor = SSD_Output_Extractor(15)
     non_printability_calculator = NPSCalculator(printable_vals_file, patch_size).cuda()
-    total_variation = TotalVariation().cuda()
+    total_variation = TotalVariationCalculator().cuda()
     saturation_calculator = SaturationCalculator().cuda()
     # Property in which most data is written to, including the patch
-    writer = SummaryWriter(logdir=FLAGS.log_dir)
+    writer = SummaryWriter(logdir=FLAGS.logdir)
 
     # Initialize some settings
     img_size = 608  # dataloader configured with dimensions from yolov2
@@ -236,7 +211,7 @@ def main():
     max_box_per_image = FLAGS.max_labs
 
     # Generate stating point
-    patch_module = Patch(patch_size=config.patch_size, typ=FLAGS.start_patch, tanh=True).cuda()
+    patch_module = SquarePatch(patch_size=config.patch_size, typ=FLAGS.start_patch, tanh=True).cuda()
     # adv_patch_cpu = self.read_image("saved_patches/patchnew0.jpg")
 
     # Sets up training and determines how long the training length will be
@@ -426,7 +401,7 @@ def main():
     # At the end of training, save image
     im = transforms.ToPILImage('RGB')(adv_patch.cpu())
     # Specifies file to save trained patch to
-    im.save(os.path.join(FLAGS.log_dir, "patch.png"), "PNG")
+    im.save(os.path.join(FLAGS.logdir, "patch.png"), "PNG")
 
 
 if __name__ == '__main__':

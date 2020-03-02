@@ -5,7 +5,7 @@ import torch
 from torchvision import transforms
 from PIL import Image
 
-from patch_utilities import PatchTransformer, PatchApplier
+from patch_utilities import SquarePatchTransformer, PatchApplier
 import numpy as np
 
 from darknet import Darknet as Yolov2
@@ -118,7 +118,7 @@ def test_on_target(adv_patch, padded_img, image_filename, target_function, targe
     resized_image_batched = resized_img.unsqueeze(0)
     ground_truths_batched = ground_truths.unsqueeze(0)
     patch_applier = PatchApplier().cuda()
-    patch_transformer = PatchTransformer().cuda()
+    patch_transformer = SquarePatchTransformer().cuda()
 
     random_patch = torch.rand(adv_patch.size()).cuda()
     noise_transforms = patch_transformer(random_patch, ground_truths_batched, input_size_sqrt,

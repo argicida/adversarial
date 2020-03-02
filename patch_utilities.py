@@ -5,15 +5,15 @@ import math
 from torch.nn import functional as F
 
 
-class Patch(torch.nn.Module):
+class SquarePatch(torch.nn.Module):
   def __init__(self, patch_size, typ="grey", tanh=True):
-    super(Patch, self).__init__()
+    super(SquarePatch, self).__init__()
     if typ == 'grey':
       # when params are 0. the rgbs are 0.5
-      self.params = torch.nn.Parameter.__new__(torch.full((3, patch_size, patch_size), 0))
+      self.params = torch.nn.Parameter(data=torch.full((3, patch_size, patch_size), 0))
     elif typ == 'random':
       # uniform distribution range from -2 to -2
-      self.params = torch.nn.Parameter.__new__((torch.rand((3, patch_size, patch_size)) * 2 - 1) * 2)
+      self.params = torch.nn.Parameter(data=(torch.rand((3, patch_size, patch_size)) * 2 - 1) * 2)
     # both options force the patch to have valid rgb values
     if tanh:
       self.constraint = lambda params:0.5 * (torch.tanh(params) + 1)
@@ -24,10 +24,10 @@ class Patch(torch.nn.Module):
     return self.constraint(self.params)
 
 
-class PatchTransformApplier(torch.nn.Module):
+class SquarePatchTransformApplier(torch.nn.Module):
   def __init__(self, device:int, do_rotate=True, rand_loc=True):
-    super(PatchTransformApplier, self).__init__()
-    self.transformer = PatchTransformer().cuda(device)
+    super(SquarePatchTransformApplier, self).__init__()
+    self.transformer = SquarePatchTransformer().cuda(device)
     self.applier = PatchApplier().cuda(device)
     self.do_rotate = do_rotate
     self.rand_loc = rand_loc
@@ -38,7 +38,7 @@ class PatchTransformApplier(torch.nn.Module):
     return self.applier(batch_square_images, transform_masks)
 
 
-class PatchTransformer(torch.nn.Module):
+class SquarePatchTransformer(torch.nn.Module):
   """PatchTransformer: transforms batch of patches into RGB masks
 
   Module providing the functionality necessary to transform a batch of patches, randomly adjusting brightness and
@@ -47,7 +47,7 @@ class PatchTransformer(torch.nn.Module):
 
   """
   def __init__(self):
-    super(PatchTransformer, self).__init__()
+    super(SquarePatchTransformer, self).__init__()
     self.min_contrast = 0.8
     self.max_contrast = 1.2
     self.min_brightness = -0.1
@@ -182,7 +182,7 @@ class PatchApplier(torch.nn.Module):
     return img_batch
 
 
-class TotalVariation(torch.nn.Module):
+class TotalVariationCalculator(torch.nn.Module):
   """TotalVariation: calculates the total variation of a patch.
 
   Module providing the functionality necessary to calculate the total vatiation (TV) of an adversarial patch.
@@ -190,7 +190,7 @@ class TotalVariation(torch.nn.Module):
   """
 
   def __init__(self):
-    super(TotalVariation, self).__init__()
+    super(TotalVariationCalculator, self).__init__()
 
   def forward(self, adv_patch):
     # bereken de total variation van de adv_patch
@@ -211,8 +211,8 @@ class NPSCalculator(torch.nn.Module):
 
   def __init__(self, printable_rgb_file, patch_side):
     super(NPSCalculator, self).__init__()
-    self.printable_rgb_array = torch.nn.Parameter.__new__(data=self._get_printable_rgb_array(printable_rgb_file, patch_side),
-                                                          requires_grad=False)
+    self.printable_rgb_array = torch.nn.Parameter(data=self._get_printable_rgb_array(printable_rgb_file, patch_side),
+                                                  requires_grad=False)
 
   def forward(self, adv_patch):
     # calculate euclidian distance between colors in patch and colors in printability_array

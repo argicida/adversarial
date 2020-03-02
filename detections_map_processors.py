@@ -19,10 +19,8 @@ def processor_choices() -> dict:
 
 
 def check_detector_output_processor_exists(choice:str):
-  if choice not in _informed_functions.keys() and choice not in _uninformed_functions.keys():
-    print("choice of detector output processor does not exist, your options:\n" + str(processor_choices()),
-          file=sys.stderr)
-    sys.exit(1)
+  assert (choice not in _informed_functions.keys()) or (choice not in _uninformed_functions.keys()), \
+      "choice of detector output processor does not exist, your options:\n%s"%str(processor_choices())
 
 
 def process(confidences:torch.Tensor, locations:torch.Tensor, choice:str, gt_boxes:torch.Tensor=None) -> torch.Tensor:
@@ -140,7 +138,7 @@ def _detection_max_avg(confidences:torch.Tensor, locations:torch.Tensor, gt_boxe
   # [batch size, num_predictions, num_labels]
   locations_compared_to_person_labels = _compare_locations_to_gt_boxes(locations, gt_boxes)
   confidences_broadcast = confidences.view(batch_size, num_predictions, 1)
-  confidences_matched_with_person = confidences_broadcast * locations_compared_to_person_labels
+  confidences_matched_with_person = confidences_broadcast * locations_compared_to_person_labels.float()
   # [batch size, num_labels]
   person_max_confidence = torch.max(confidences_matched_with_person, dim=1)[0]
   # [batch size]
