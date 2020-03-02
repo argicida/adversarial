@@ -57,7 +57,6 @@ def main(argv):
         target_confidences = []
         for target_name in outputs_by_target:
           setting = target_settings[target_name]
-          labels = labels_dict[target_name]
           if setting is 1 or setting is 2:
             # [batch_size, num_predictions] confidence
             # [batch_size, num_predictions, 2] cx_cy
@@ -86,6 +85,7 @@ def main(argv):
           epoch_unweighted_detector_loss_sum[target_name] += extracted_confidence.detach().cpu().numpy()
         # [num_target]
         target_confidences = torch.stack(target_confidences)
+        # [1]
         detection_loss_gpu = torch.matmul(static_ensemble_weights_gpu, target_confidences)
         printability_loss_gpu = FLAGS.lambda_nps * nps_gpu(adv_patch_gpu)
         patch_variation_loss_gpu = FLAGS.lambda_tv * tv_gpu(adv_patch_gpu)

@@ -5,6 +5,8 @@ from datetime import datetime
 
 from detectors_manager import SUPPORTED_TRAIN_DETECTORS
 from test_patch import SUPPORTED_TEST_DETECTORS
+from detections_map_processors import uninformed_detections_processor_choices, informed_detections_processor_choices,\
+    processor_choices
 
 FLAGS = flags.FLAGS
 
@@ -23,7 +25,9 @@ for detector_name in SUPPORTED_TRAIN_DETECTORS:
     flags.DEFINE_float(name="%s_object_weight"%detector_name, default=0.9, lower_bound=0, upper_bound=1,
                        help="how much is object confidence weighted relative to class confidence "
                             "for %s"%detector_name)
-flags.DEFINE_string(name="confidence_processor", default="map_max", help="choice of confidence extraction function")
+flags.DEFINE_enum(name="confidence_processor", default="map_max",
+                  enum_values=uninformed_detections_processor_choices()+informed_detections_processor_choices(),
+                  help="choice of confidence extraction function, %s"%str(processor_choices()))
 flags.DEFINE_boolean(name="activate_logits", default=False, help="whether to use probabilities instead of logits when "
                                                                  "extracting detection confidence")
 
