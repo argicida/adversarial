@@ -65,3 +65,9 @@ flags.DEFINE_string(name="logdir",
                     default="logs/%s%s"%(_init_time.astimezone().tzinfo.tzname(None),
                                          _init_time.strftime('%Y%m%d_%H_%M_%S_%f')),
                     help="directory to store logs, images, and statistics")
+flags.DEFINE_boolean(name="tensorboard_batch", default=False, help="whether to log batch statistics to tensorboard;"
+                                                                   "potential to take up tons of storage")
+flags.DEFINE_boolean(name="tensorboard_epoch", default=True, help="whether to log epoch statistics to tensorboard;"
+                                                                  "potential to take up a lot of storage")
+flags.DEFINE_boolean(name="verbose", default=False, help="whether to print program status to stdout;"
+                                                         "potential to take up a lot of storage")

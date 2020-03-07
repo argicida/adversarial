@@ -9,12 +9,14 @@ from inria import InriaDataset
 from detectors_manager import SUPPORTED_TRAIN_DETECTORS, Manager
 from patch_utilities import SquarePatch, NPSCalculator, TotalVariationCalculator
 from detections_map_processors import check_detector_output_processor_exists, process
-
+from tensorboardX import SummaryWriter
 
 def main(argv):
   # INITIALIZATION
+  if FLAGS.verbose: print("Initializing")
   if not os.path.exists(FLAGS.logdir):
     os.makedirs(FLAGS.logdir)
+  tensorboard_writer = SummaryWriter(logdir=FLAGS.logdir)
   check_detector_output_processor_exists(FLAGS.confidence_processor)
   cuda_device_id = 0 # we only use a single GPU at the moment
   flags_dict = FLAGS.flag_values_dict()
@@ -41,20 +43,22 @@ def main(argv):
   num_targets = len(target_settings)
   static_ensemble_weights_gpu = torch.full([num_targets], fill_value=1/num_targets,
                                        device=torch.device('cuda:%i'%cuda_device_id))
+  if FLAGS.verbose: print("Session Initialized")
 
   # TRAINING
+  target_extracted_confidences_gpu_dict = {}
   for epoch in range(FLAGS.n_epochs):
+    if FLAGS.verbose: print('  EPOCH NR: ', epoch)
     epoch_total_loss_sum = 0.0
     epoch_unweighted_detector_loss_sum = {detector_name:0.0 for detector_name in target_settings}
     epoch_weighted_detection_loss_sum = 0.0
-    epoch_weighted_nonprintability_loss_sum = 0.0
+    epoch_weighted_printability_loss_sum = 0.0
     epoch_weighted_patch_variation_loss_sum = 0.0
     for batch_index, (images, labels_dict) in enumerate(train_loader):
       with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
         adv_patch_gpu = patch_module_gpu()
         outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=labels_dict,
                                                                     patch_2d=adv_patch_gpu)
-        target_confidences = []
         for target_name in outputs_by_target:
           setting = target_settings[target_name]
           if setting is 1 or setting is 2:
@@ -80,12 +84,11 @@ def main(argv):
                                    + person_coef * torch.mean(extracted_person_confidences)
           else:
             assert False
-          target_confidences.append(extracted_confidence)
-          epoch_unweighted_detector_loss_sum[target_name] += extracted_confidence.detach().cpu().numpy()
+          target_extracted_confidences_gpu_dict[target_name] = extracted_confidence
         # [num_target]
-        target_confidences = torch.stack(target_confidences)
+        target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
         # [1]
-        detection_loss_gpu = torch.matmul(static_ensemble_weights_gpu, target_confidences)
+        detection_loss_gpu = torch.matmul(static_ensemble_weights_gpu, target_extracted_confidences_tensor)
         printability_loss_gpu = FLAGS.lambda_nps * nps_gpu(adv_patch_gpu)
         patch_variation_loss_gpu = FLAGS.lambda_tv * tv_gpu(adv_patch_gpu)
         total_loss_gpu = detection_loss_gpu + printability_loss_gpu + patch_variation_loss_gpu
@@ -96,30 +99,54 @@ def main(argv):
         optimizer.zero_grad()
 
         # BATCH LOGGING
-        epoch_total_loss_sum += total_loss_gpu.detach().cpu().numpy()
-        epoch_weighted_detection_loss_sum += detection_loss_gpu.detach().cpu().numpy()
-        epoch_weighted_nonprintability_loss_sum += printability_loss_gpu.detach().cpu().numpy()
-        epoch_weighted_patch_variation_loss_sum += patch_variation_loss_gpu.detach().cpu().numpy()
+        total_loss_cpu = total_loss_gpu.detach().cpu().numpy()
+        # calculate statistics
+        if FLAGS.tensorboard_batch or FLAGS.tensorboard_epoch:
+          detection_loss_cpu = detection_loss_gpu.detach().cpu().numpy()
+          printability_loss_cpu = printability_loss_gpu.detach().cpu().numpy()
+          patch_variation_loss_cpu = patch_variation_loss_gpu.detach().cpu().numpy()
+          extracted_confidence_cpu_dict = {name:target_extracted_confidences_gpu_dict[name].detach().cpu().numpy()
+                                           for name in target_extracted_confidences_gpu_dict}
+        if FLAGS.tensorboard_epoch:
+          epoch_total_loss_sum += total_loss_cpu
+          epoch_weighted_detection_loss_sum += detection_loss_cpu
+          epoch_weighted_printability_loss_sum += printability_loss_cpu
+          epoch_weighted_patch_variation_loss_sum += patch_variation_loss_cpu
+          for target_name in target_extracted_confidences_gpu_dict:
+            epoch_unweighted_detector_loss_sum[target_name] += extracted_confidence_cpu_dict[target_name]
+        # write to log
+        if FLAGS.tensorboard_batch:
+          batch_iteration = iterations_per_epoch * epoch + batch_index
+          tensorboard_writer.add_scalar('batch/total_loss', total_loss_cpu, batch_iteration)
+          tensorboard_writer.add_scalar('batch/detection_loss', detection_loss_cpu, batch_iteration)
+          tensorboard_writer.add_scalar('batch/printability_loss', printability_loss_cpu, batch_iteration)
+          tensorboard_writer.add_scalar('batch/patch_variation_loss', patch_variation_loss_cpu, batch_iteration)
+          for target_name in target_extracted_confidences_gpu_dict:
+            tensorboard_writer.add_scalar('batch/%s_unweighted_loss'%target_name,
+                                          extracted_confidence_cpu_dict[target_name], batch_iteration)
 
     # EPOCH LOGGING & LR SCHEDULING
     epoch_total_loss_mean = epoch_total_loss_sum/iterations_per_epoch
     lr_scheduler.step(epoch_total_loss_mean)
-    epoch_unweighted_detector_loss_mean = {detector_name:epoch_unweighted_detector_loss_sum[detector_name]
-                                                         /iterations_per_epoch
-                                           for detector_name in target_settings}
-    epoch_weighted_detection_loss_mean = epoch_weighted_detection_loss_sum/iterations_per_epoch
-    epoch_weighted_nonprintability_loss_mean = epoch_weighted_nonprintability_loss_sum/iterations_per_epoch
-    epoch_weighted_patch_variation_loss_mean = epoch_weighted_patch_variation_loss_sum/iterations_per_epoch
-    print('  EPOCH NR: ', epoch),
-    print('EPOCH LOSS: %.3f'%epoch_total_loss_mean)
-    print('  DET LOSS: %.3f'%epoch_weighted_detection_loss_mean)
-    print('  NPS LOSS: %.3f'%epoch_weighted_nonprintability_loss_mean)
-    print('   TV LOSS: %.3f'%epoch_weighted_patch_variation_loss_mean)
-    for detector_name in epoch_unweighted_detector_loss_mean:
-      print('%s: %.3f'%(detector_name, epoch_unweighted_detector_loss_mean[detector_name]))
-    print()
-    im = transforms.ToPILImage('RGB')(adv_patch_gpu.cpu())
+    adv_patch_cpu_tensor = adv_patch_gpu.detach().cpu()
+    im = transforms.ToPILImage('RGB')(adv_patch_cpu_tensor)
     im.save(os.path.join(FLAGS.logdir, "patch.png"), "PNG")
+    if FLAGS.tensorboard_epoch:
+      # calculate statistics
+      epoch_weighted_detection_loss_mean = epoch_weighted_detection_loss_sum/iterations_per_epoch
+      epoch_weighted_printability_loss_mean = epoch_weighted_printability_loss_sum/iterations_per_epoch
+      epoch_weighted_patch_variation_loss_mean = epoch_weighted_patch_variation_loss_sum/iterations_per_epoch
+      # write to log
+      tensorboard_writer.add_scalar('epoch/total_loss_mean', epoch_total_loss_mean, epoch)
+      tensorboard_writer.add_scalar('epoch/detection_loss_mean', epoch_weighted_detection_loss_mean, epoch)
+      tensorboard_writer.add_scalar('epoch/printability_loss_mean', epoch_weighted_printability_loss_mean, epoch)
+      tensorboard_writer.add_scalar('epoch/patch_variation_loss_mean', epoch_weighted_patch_variation_loss_mean, epoch)
+      for target_name in epoch_unweighted_detector_loss_sum:
+        epoch_unweighted_detector_loss_mean = epoch_unweighted_detector_loss_sum[target_name] / iterations_per_epoch
+        tensorboard_writer.add_scalar('epoch/%s_unweighted_loss_mean' % target_name, epoch_unweighted_detector_loss_mean,
+                                      epoch)
+      tensorboard_writer.add_image('patch', adv_patch_cpu_tensor.numpy(), epoch) # tensorboard colors are buggy
+    if FLAGS.verbose: print('EPOCH LOSS: %.3f\n'%epoch_total_loss_mean)
 
 
 if __name__ == '__main__':
