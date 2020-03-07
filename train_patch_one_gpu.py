@@ -1,5 +1,6 @@
 import torch
 import os
+import json
 from absl import app
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -16,10 +17,12 @@ def main(argv):
   if FLAGS.verbose: print("Initializing")
   if not os.path.exists(FLAGS.logdir):
     os.makedirs(FLAGS.logdir)
+  flags_dict = FLAGS.flag_values_dict()
+  with open(os.path.join(FLAGS.logdir, 'flags.json'), 'w') as fp:
+    json.dump(flags_dict, fp)
   tensorboard_writer = SummaryWriter(logdir=FLAGS.logdir)
   check_detector_output_processor_exists(FLAGS.confidence_processor)
   cuda_device_id = 0 # we only use a single GPU at the moment
-  flags_dict = FLAGS.flag_values_dict()
   target_settings = {}
   target_devices = {}
   for candidate in SUPPORTED_TRAIN_DETECTORS:
