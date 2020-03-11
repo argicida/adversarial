@@ -1,5 +1,8 @@
 import torch
 from PIL import Image
+from PIL import Image
+from matplotlib import pyplot as plt
+from matplotlib import patches
 import numpy as np
 import torch.nn.functional as F
 
@@ -23,7 +26,8 @@ SUPPORTED_TRAIN_DETECTORS = {'yolov2':3, # 1: class only, 2: object only, 3: obj
 
 class Manager:
   def __init__(self, detector_device_mapping:dict, train_detector_settings:dict, activate_logits:bool=False,
-               debug_autograd:bool=False, debug_device:bool=False, test_detectors:list=None): # testing currently not supported
+               debug_autograd:bool=False, debug_device:bool=False, debug_coords:bool=False, plot_patches:bool=False,
+               test_detectors:list=None): # testing currently not supported
     # all detectors in train_detector_settings and test_detectors must be mapped to a device in detector_device_mapping
     self.train_detector_settings = train_detector_settings
     self.detector_instances = {}
@@ -31,6 +35,8 @@ class Manager:
     self.patch_appliers_by_device = {}
     self.debug_autograd = debug_autograd
     self.debug_device = debug_device
+    self.debug_coords = debug_coords
+    self.plot_patches = plot_patches
     for detector_name, cuda_device_id in detector_device_mapping.items():
       target_setting = train_detector_settings[detector_name]
       detector = _create_detector(detector_name, device=cuda_device_id, activate_logits=activate_logits)
@@ -48,7 +54,35 @@ class Manager:
         assert False, "Invalid Detector Setting: %s %i"%(detector_name, target_setting)
 
   def _conf_grad_ok(self, confidences:torch.Tensor):
-    return (not self.debug_autograd) or (confidences.requires_grad and (confidences.grad_fn is not None))
+    return confidences.requires_grad and (confidences.grad_fn is not None)
+
+  def _plot_patched_images_comparison(self, input_images:torch.Tensor, patched_images:torch.Tensor,
+                                      boxes:torch.Tensor, detector_name:str):
+    num_images = input_images.shape[0]
+    height = input_images.shape[2]
+    width = input_images.shape[3]
+    transpose = lambda x: np.transpose(x, axes=[0, 2, 3, 1])
+    clean_images = transpose((input_images.detach().cpu().numpy() * 255).astype('uint8'))
+    patched_images = transpose((patched_images.detach().cpu().numpy() * 255).astype('uint8'))
+    boxes = boxes.detach().cpu().numpy()
+    fig, axes = plt.subplots(2, num_images)
+    for index, clean_img in enumerate(clean_images):
+      patched_img = patched_images[index]
+      clean_img_pil = Image.fromarray(clean_img)
+      patched_img_pil = Image.fromarray(patched_img)
+      axes[0, index].imshow(clean_img_pil)
+      axes[1, index].imshow(patched_img_pil)
+      for c_x_y_w_h in boxes[index]:
+        c, x, y, w, h = c_x_y_w_h
+        color = 'r' if c==0 else 'g'
+        x = x * width
+        w = w * width
+        y = y * height
+        h = h * height
+        rect = patches.Rectangle((x - w/2, y - h/2), w, h, linewidth=1, edgecolor=color, facecolor='none')
+        axes[1, index].add_patch(rect)
+    fig.suptitle(detector_name)
+    plt.show()
 
   def train_forward_propagate(self, input_images:torch.Tensor, labels_by_target:dict, patch_2d:torch.Tensor=None) \
         -> dict:
@@ -71,15 +105,18 @@ class Manager:
       labels_copy = labels.cuda(device=target_cuda_device, non_blocking=True)
       detector_input = self.patch_appliers_by_device[target.device](patch_copy, images_copy, labels_copy) \
           if patching_enabled else images_copy
-
+      if self.plot_patches: self._plot_patched_images_comparison(images_copy, detector_input, labels_copy, target_name)
       raw_output = target.batched_forward_to_raw_output(detector_input)
+      #labels_copy = target.normalize_labels(labels_copy)
 
       outputs = []
       for fn in self.output_process_fns[target_name]:
         conf, cxcy = fn(raw_output)
-        assert self._conf_grad_ok(conf), "%s gradients"%target_name
+        assert (not self.debug_autograd) or self._conf_grad_ok(conf), "%s gradients"%target_name
         assert (not self.debug_device) or ((conf.device == target_cuda_device) and (cxcy.device == target_cuda_device)),\
             "%s output device inconsistent"%target_name
+        assert (not self.debug_coords) or (torch.max(cxcy) < 2), \
+            "%s box locations not normalized: %.2f"%(target_name, float(torch.max(cxcy)))
         outputs.append((conf, cxcy, labels_copy))
       output_maps[target_name] = outputs
     return output_maps
@@ -97,29 +134,64 @@ class Manager:
 
 
 class _AbstractDetector:
-  def __init__(self, device:int, activate_logits:bool):
+  def __init__(self, device:int, activate_logits:bool, input_w:int, input_h:int):
     self.device = device
     self.model = self._load_model(device)
     self.activate_logits = activate_logits
+    self.input_w = input_w
+    self.input_h = input_h
     return
 
-  def batched_forward_to_raw_output(self, batched_images:torch.Tensor) -> torch.Tensor:
+  def batched_forward_to_raw_output(self, batched_images:torch.Tensor):
+    """
+    :param batched_images: batched images on the same device as the detector
+    :return: depends on the detector
+    """
     return self.model(self._batched_preprocess(batched_images))
 
   def _load_model(self, device:int) -> torch.nn.Module:
-    # returns an nn.module that forward pass batched images into a tensor of logits
-    # which can be turned into confidence scores
+    """
+    :param device: cuda device id
+    :return: an nn.module that forward pass batched images into a tensor of logits
+    """
     raise NotImplementedError
 
-  def _batched_preprocess(self, batched_images: torch.Tensor):
-    # preprocess images for the particular model
+  def _batched_preprocess(self, batched_images: torch.Tensor) -> torch.Tensor:
+    """
+    :param batched_images: batched images on the same device as the detector
+    :return: normalized, zero meaned, etc. whatever needed for the particular detector
+    """
     raise NotImplementedError
 
   def raw_output_to_objects_conf_cxcy(self, raw_output):
+    """
+    :param raw_output: raw output from batched_forward_to_raw_output
+    :return: object confidence logits/scores [batched size, num_predictions],
+        cx_cy [batched size, num_predictions, 2] normalized
+    """
     raise NotImplementedError
 
   def raw_output_to_people_conf_cxcy(self, raw_output):
+    """
+    :param raw_output: raw output from batched_forward_to_raw_output
+    :return: person confidence logits/scores [batched size, num_predictions],
+        cx_cy [batched size, num_predictions, 2] normalized
+    """
     raise NotImplementedError
+
+  def normalize_labels(self, labels: torch.Tensor):
+    """
+    :param labels: [batch size, num_labels, 5] gt boxes for person bounding boxes consisted of
+        (is_person, x_0, y_0, w, h), should be scaled to detector input size
+    :return: [batch size, num_labels, 5] gt boxes for person bounding boxes consisted of
+        (is_person, x_0, y_0, w, h), should be scaled to (0, 1)
+    """
+    labels_clone = labels.clone()
+    labels_clone[:, :, 1] = labels_clone[:, :, 1] / self.input_w
+    labels_clone[:, :, 3] = labels_clone[:, :, 3] / self.input_w
+    labels_clone[:, :, 2] = labels_clone[:, :, 2] / self.input_h
+    labels_clone[:, :, 4] = labels_clone[:, :, 4] / self.input_h
+    return labels_clone
 
   def single_image_nms_predictions(self, single_square_image:Image) -> np.ndarray:
     # used for testing, which goes through images one by one
@@ -139,11 +211,12 @@ def _create_detector(architecture:str, device:int, activate_logits:bool) -> _Abs
 
 class _AbstractYolov2(_AbstractDetector):
   def __init__(self, device:int, activate_logits:bool):
-    super(_AbstractYolov2, self).__init__(device, activate_logits=activate_logits)
+    super(_AbstractYolov2, self).__init__(device, activate_logits=activate_logits, input_w=608, input_h=608)
     self.num_cls = 80
     self.num_priors = 5
     self.num_non_cls_preds = 5 # (x off set, y off set, w, h, object logits)
     self.person_cls_id = 0
+    self.cuda_device = torch.device("cuda:%i"%self.device)
 
   def _load_model(self, device:int) -> torch.nn.Module:
     cfg_file = "cfg/yolov2.cfg"
@@ -153,7 +226,7 @@ class _AbstractYolov2(_AbstractDetector):
     return yolov2.eval().cuda(device)
 
   def _batched_preprocess(self, batched_images:torch.Tensor) -> torch.Tensor:
-    return F.interpolate(batched_images, (608, 608))
+    return F.interpolate(batched_images, (self.input_h, self.input_w))
 
   def batched_forward_to_raw_output(self, batched_images:torch.Tensor):
     # [batch, num_priors*(num_non_cls_preds + num_cls), h, w]
@@ -171,13 +244,15 @@ class _AbstractYolov2(_AbstractDetector):
 
     # [batch, h * w * num_priors]
     grid_x = torch.linspace(0, w-1, w).repeat(h,1).repeat(b*self.num_priors, 1, 1).view(b, self.num_priors*h*w)\
-      .cuda(torch.device("cuda:%i"%self.device))
+      .cuda(self.cuda_device)
     grid_y = torch.linspace(0, h-1, h).repeat(w,1).t().repeat(b*self.num_priors, 1, 1).view(b, self.num_priors*h*w)\
-      .cuda(torch.device("cuda:%i"%self.device))
+      .cuda(self.cuda_device)
     # [batch, h * w * num_priors, 2]
     grid_xy = torch.stack([grid_x, grid_y], dim=2)
     cx_cy = torch.sigmoid(batched_logits[:, :, 0:2])
     cx_cy = cx_cy + grid_xy
+    anchors_width_height = torch.tensor([w, h], dtype=torch.float).cuda(self.cuda_device)
+    cx_cy = cx_cy / anchors_width_height
     return batched_logits, cx_cy
 
   def raw_output_to_objects_conf_cxcy(self, raw_output):
@@ -205,7 +280,7 @@ class _AbstractYolov2(_AbstractDetector):
 
 class _AbstractSSD(_AbstractDetector):
   def __init__(self, device:int, activate_logits:bool):
-    super(_AbstractSSD, self).__init__(device, activate_logits=activate_logits)
+    super(_AbstractSSD, self).__init__(device, activate_logits=activate_logits, input_w=300, input_h=300)
     cuda_device = torch.device('cuda:%i'%device)
     self.input_means = torch.tensor([123, 117, 104], dtype=torch.float, device=cuda_device).unsqueeze(-1).unsqueeze(-1)
     self.person_cls_id = 15
@@ -220,7 +295,7 @@ class _AbstractSSD(_AbstractDetector):
 
   def _batched_preprocess(self, batched_images: torch.Tensor) -> torch.Tensor:
     batched_images = batched_images * 255 - self.input_means
-    return F.interpolate(batched_images, (300, 300))
+    return F.interpolate(batched_images, (self.input_h, self.input_w))
 
   def batched_forward_to_raw_output(self, batched_images:torch.Tensor):
     # confidences: [b, num_priors=4*sum(layersize), num_classes]
@@ -252,11 +327,12 @@ class _AbstractSSD(_AbstractDetector):
 
 class _AbstractYolov3(_AbstractDetector):
   def __init__(self, device:int, activate_logits:bool):
-    super(_AbstractYolov3, self).__init__(device, activate_logits=activate_logits)
+    super(_AbstractYolov3, self).__init__(device, activate_logits=activate_logits, input_w=608, input_h=608)
     self.num_cls = 80
     self.num_priors = 3
     self.num_non_cls_preds = 5 # (x off set, y off set, w, h, object logits)
     self.person_cls_id = 0
+    self.w_h_tensor = torch.tensor([self.input_w, self.input_h], dtype=torch.float).cuda(torch.device("cuda:%i" % self.device))
 
   def _load_model(self, device: int) -> torch.nn.Module:
     cfg_file = "./implementations/yolov3/config/yolov3.cfg"
@@ -270,7 +346,12 @@ class _AbstractYolov3(_AbstractDetector):
     return torch.log((activated_logits + epsilon)/(-1 * activated_logits + 1 + epsilon))
 
   def _batched_preprocess(self, batched_images: torch.Tensor) -> torch.Tensor:
-    return F.interpolate(batched_images, (608, 608))
+    return F.interpolate(batched_images, (self.input_h, self.input_w))
+
+  def batched_forward_to_raw_output(self, batched_images:torch.Tensor):
+    raw = super(_AbstractYolov3, self).batched_forward_to_raw_output(batched_images)
+    raw[:, :, 0:2] = raw[:, :, 0:2] / self.w_h_tensor # normalize locations
+    return raw
 
   def raw_output_to_objects_conf_cxcy(self, raw_output: torch.Tensor):
     activated_objects = raw_output[:, :, 4]

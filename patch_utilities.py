@@ -1,7 +1,8 @@
+import math
 import torch
 import numpy as np
+
 from median_pool import MedianPool2d
-import math
 from torch.nn import functional as F
 
 
@@ -35,7 +36,8 @@ class SquarePatchTransformApplier(torch.nn.Module):
   def forward(self, patch:torch.Tensor, batch_square_images:torch.Tensor, batch_ground_truths:torch.Tensor):
     img_size = batch_square_images.shape[2]
     transform_masks = self.transformer(patch, batch_ground_truths, img_size, self.do_rotate, self.rand_loc)
-    return self.applier(batch_square_images, transform_masks)
+    patched_images = self.applier(batch_square_images, transform_masks)
+    return patched_images
 
 
 class SquarePatchTransformer(torch.nn.Module):

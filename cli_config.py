@@ -25,7 +25,7 @@ for detector_name in SUPPORTED_TRAIN_DETECTORS:
     flags.DEFINE_float(name="%s_object_weight"%detector_name, default=0.9, lower_bound=0, upper_bound=1,
                        help="how much is object confidence weighted relative to class confidence "
                             "for %s"%detector_name)
-flags.DEFINE_enum(name="confidence_processor", default="map_max",
+flags.DEFINE_enum(name="confidence_processor", default="max",
                   enum_values=uninformed_detections_processor_choices()+informed_detections_processor_choices(),
                   help="choice of confidence extraction function, %s"%str(processor_choices()))
 flags.DEFINE_boolean(name="activate_logits", default=False, help="whether to use probabilities instead of logits when "
@@ -40,10 +40,13 @@ flags.DEFINE_enum(name="start_patch", default="grey", enum_values=["grey", "rand
                                                                                            "random patch")
 flags.DEFINE_integer(name="patch_square_length", default=300, help="side length of the square patch")
 
-# debug
+# debug detectors and patching
 flags.DEFINE_boolean(name="debug_autograd", default=False, help="whether to use extra computation on debugging autograd")
 flags.DEFINE_boolean(name="debug_device", default=False, help="whether to use extra computation on "
                                                               "debugging tensor devices")
+flags.DEFINE_boolean(name="debug_coords", default=False, help="whether to use extra computation on "
+                                                              "debugging detector coordinates output")
+flags.DEFINE_boolean(name="plot_patches", default=False, help="whether to use matplotlib to display patched images")
 
 # testing settings
 for detector_name in SUPPORTED_TEST_DETECTORS:

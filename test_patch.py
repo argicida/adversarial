@@ -1,12 +1,14 @@
-from typing import Callable
 import os
 import sys
 import torch
+import numpy as np
+import pandas as pd
 from torchvision import transforms
 from PIL import Image
-
+from typing import Callable
+from matplotlib import pyplot as plt
+from matplotlib import patches
 from patch_utilities import SquarePatchTransformer, PatchApplier
-import numpy as np
 
 from darknet import Darknet as Yolov2
 from utils import do_detect as yolov2_detect
@@ -16,25 +18,14 @@ from implementations.yolov3.utils import utils as yolov3_utils
 
 from implementations.ssd.vision.ssd.vgg_ssd import create_vgg_ssd, create_vgg_ssd_predictor
 
-import json
-import pandas as pd
-
-from matplotlib import pyplot as plt
-from matplotlib import patches
 
 VISUAL_DEBUG = False
 PRINT_NMS_OUTPUT = False
 
-TEST_DIR = "inria/Test/pos"
-LABELS_DIR = "./testing"
-
-def main():
+def test_on_all_detectors(images_dir, patchfile):
     yolov2 = load_yolov2(0)
     ssd = load_ssd(0)
     yolov3 = load_yolov3(0)
-
-    # To change the patch you're testing, change the patchfile variable to the path of the desired patch
-    patchfile = "saved_patches/perry_08-26_500_epochs.jpg"
 
     yolov2_img_size_sqrt = 608
     yolov3_img_size_sqrt = 608
@@ -65,11 +56,11 @@ def main():
                   ['ssd', ssd_img_size_sqrt**2] + [0 for _ in range(num_numerical_cols)]]
     statistics = pd.DataFrame(statistics, columns=cols)
 
-    for imgfile in os.listdir(TEST_DIR):
+    for imgfile in os.listdir(images_dir):
         if imgfile.endswith('.jpg') or imgfile.endswith('.png'):
             image_name = os.path.splitext(imgfile)[0]    # image image_name w/o extension
             # open image and adjust to yolo input size
-            imgfile = os.path.abspath(os.path.join(TEST_DIR, imgfile))
+            imgfile = os.path.abspath(os.path.join(images_dir, imgfile))
             img = Image.open(imgfile).convert('RGB')
             w,h = img.size
             # ensure image is square
@@ -87,21 +78,20 @@ def main():
                     padded_img = Image.new('RGB', (w, w), color=(127, 127, 127))
                     padded_img.paste(img, (0, int(padding)))
 
-            test_on_target(adv_patch, padded_img, image_name, yolov2, wrapper_yolov2,
+            test_on_target(adv_patch, padded_img, images_dir, image_name, yolov2, wrapper_yolov2,
                            'yolov2', yolov2_img_size_sqrt, statistics)
-            test_on_target(adv_patch, padded_img, image_name, ssd, wrapper_ssd,
+            test_on_target(adv_patch, padded_img, images_dir, image_name, ssd, wrapper_ssd,
                            'ssd', ssd_img_size_sqrt, statistics)
-            test_on_target(adv_patch, padded_img, image_name, yolov3, wrapper_yolov3,
+            test_on_target(adv_patch, padded_img, images_dir, image_name, yolov3, wrapper_yolov3,
                            'yolov3', yolov3_img_size_sqrt, statistics)
             if VISUAL_DEBUG:
                 # show detections using pyplot state altered by detection functions
                 plt.show()
     patch_statistics_filepath = os.path.join(*os.path.splitext(patchfile)[0:-1]) + '.csv'
     statistics.to_csv(patch_statistics_filepath, index=False)
-    print(statistics)
-    print('statistics saved to ' + patch_statistics_filepath)
+    return statistics
 
-def test_on_target(adv_patch, padded_img, image_filename, target_function, target_wrapper_function,
+def test_on_target(adv_patch, padded_img, image_dir, image_filename, target_function, target_wrapper_function,
                    target:str, input_size_sqrt:int, statistics:pd.DataFrame):
     tensorify = transforms.ToTensor()
     pilify = transforms.ToPILImage()
@@ -111,14 +101,14 @@ def test_on_target(adv_patch, padded_img, image_filename, target_function, targe
 
     # it's possible to not run the clean detection every time, change in the future if necessary
     clean_boxes = target_wrapper_function(resized_img, target_function, input_size_sqrt, input_size_sqrt)
-    save_architecture_ground_truths_if_none_exist(clean_boxes, input_size_sqrt, image_filename, target)
+    save_architecture_ground_truths_if_none_exist(clean_boxes, input_size_sqrt, image_dir, image_filename, target)
 
-    ground_truths = load_ground_truths_as_tensor(image_filename, target).cuda()
+    ground_truths = load_ground_truths_as_tensor(image_dir, image_filename, target).cuda()
     resized_img = tensorify(resized_img).cuda()
     resized_image_batched = resized_img.unsqueeze(0)
     ground_truths_batched = ground_truths.unsqueeze(0)
-    patch_applier = PatchApplier().cuda()
-    patch_transformer = SquarePatchTransformer().cuda()
+    patch_applier = PatchApplier().cuda(0)
+    patch_transformer = SquarePatchTransformer().cuda(0)
 
     random_patch = torch.rand(adv_patch.size()).cuda()
     noise_transforms = patch_transformer(random_patch, ground_truths_batched, input_size_sqrt,
@@ -193,13 +183,13 @@ def bitwise_boxes_area_union(x0_y0_width_height_human_dataframe:pd.DataFrame, im
     return area
 
 
-def generate_label_filepath(target:str, image_name:str) -> str:
-    return os.path.abspath(os.path.join(TEST_DIR,'clean/', target + '-labels/', image_name + '.txt'))
+def generate_label_filepath(target:str, images_dir:str, image_name:str) -> str:
+    return os.path.abspath(os.path.join(images_dir, 'clean/', target + '-labels/', image_name + '.txt'))
 
 
 def save_architecture_ground_truths_if_none_exist(x0_y0_width_height_human_dataframe_clean:pd.DataFrame,
-                                                  image_size_sqrt:int, image_name:str, target:str) -> None:
-    label_filepath = generate_label_filepath(target, image_name)
+                                                  image_size_sqrt:int, image_dir:str, image_name:str, target:str) -> None:
+    label_filepath = generate_label_filepath(target, image_dir, image_name)
     try:
         _ = os.path.getsize(label_filepath)
     except FileNotFoundError:
@@ -220,8 +210,8 @@ def save_architecture_ground_truths_if_none_exist(x0_y0_width_height_human_dataf
     return
 
 
-def load_ground_truths_as_tensor(image_name:str, target:str) -> torch.Tensor:
-    label_filepath = generate_label_filepath(target, image_name)
+def load_ground_truths_as_tensor(image_dir:str, image_name:str, target:str) -> torch.Tensor:
+    label_filepath = generate_label_filepath(target, image_dir, image_name)
     label = None
     try:
         if os.path.getsize(label_filepath):
@@ -419,6 +409,11 @@ SUPPORTED_TEST_DETECTORS = []
 for supported in DETECTOR_LOADERS_N_WRAPPERS:
     SUPPORTED_TEST_DETECTORS.append(supported)
 
+def main():
+    images_dir = "inria/Test/pos"
+    example_patch = "saved_patches/perry_08-26_500_epochs.jpg"
+    stats = test_on_all_detectors(images_dir=images_dir, patchfile=example_patch)
+    print(stats)
 
 if __name__ == '__main__':
     main()

@@ -39,6 +39,8 @@ def main(argv):
       resized_img = img.resize((input_size, input_size))
       df = wrapper_fn(resized_img, detector, input_size, input_size) # ["x0", "y0", "w", 'h', 'human']
       textfile = open(lab_path, 'w+')
+      #print(detector_id)
+      #print(df)
       for index, box in df.iterrows():
         norm_x0 = box['x0'] / input_size
         norm_y0 = box['y0'] / input_size

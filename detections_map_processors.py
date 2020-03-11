@@ -27,8 +27,10 @@ def process(confidences:torch.Tensor, locations:torch.Tensor, choice:str, gt_box
   """
   :param confidences: [batch size, num_predictions] batch of floats corresponding to predictions
   :param locations: [batch size, num_predictions, 2] same shape as confidences with one more axis for center_x, center_y
+      locations should be scaled to (0,1)
   :param choice: choice of processor
-  :param gt_boxes: gt boxes for person bounding boxes consisted of [is_person, x_0, y_0, x_1, y_1] (relative to size of pics)
+  :param gt_boxes: [batch size, num_labels, 5] gt boxes for person bounding boxes consisted of
+      (is_person, cx, cy, w, h), should be scaled to (0,1)
   :return: [batch size]
   """
   check_detector_output_processor_exists(choice)
@@ -37,7 +39,13 @@ def process(confidences:torch.Tensor, locations:torch.Tensor, choice:str, gt_box
       print("ground truth bounding boxes required for informed output processing", file=sys.stderr)
       sys.exit(1)
     fn = _informed_functions[choice]
-    return fn(confidences, locations, gt_boxes)
+    # turn (is_person, cx, cy, w, h) into (is_person, x_0, y_0, x_1, y_1)
+    gt_boxes_transformed = torch.empty_like(gt_boxes)
+    gt_boxes_transformed[:, :, 0] = gt_boxes[:, :, 0]
+    half_w_h = 1/2 * gt_boxes[:, :, 3:5]
+    gt_boxes_transformed[:, :, 1:3] = gt_boxes[:, :, 1:3] - half_w_h
+    gt_boxes_transformed[:, :, 3:5] = gt_boxes[:, :, 1:3] + half_w_h
+    return fn(confidences, locations, gt_boxes_transformed)
   if choice in _uninformed_functions.keys():
     fn = _uninformed_functions[choice]
     return fn(confidences)
@@ -63,8 +71,8 @@ def _max(confidences:torch.Tensor) -> torch.Tensor:
 
 # functions that don't make use of ground truth, and only uses detector output
 # batch_of_output_map -> batch_of_scalar
-_uninformed_functions = {"map_avg":_avg,
-                         "map_max":_max}
+_uninformed_functions = {"avg":_avg,
+                         "max":_max}
 
 
 def _compare_locations_to_gt_boxes(locations:torch.Tensor, gt_boxes:torch.Tensor) -> torch.Tensor:

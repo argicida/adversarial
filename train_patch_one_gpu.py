@@ -36,7 +36,8 @@ def main(argv):
                             batch_size=FLAGS.bs, num_workers=FLAGS.num_workers, shuffle=True)
   iterations_per_epoch = len(train_loader)
   targets_manager = Manager(target_devices, target_settings, activate_logits=FLAGS.activate_logits,
-                            debug_autograd=FLAGS.debug_autograd, debug_device=FLAGS.debug_device)
+                            debug_autograd=FLAGS.debug_autograd, debug_device=FLAGS.debug_device,
+                            debug_coords=FLAGS.debug_coords, plot_patches=FLAGS.plot_patches)
   patch_module_gpu = SquarePatch(patch_size=FLAGS.patch_square_length, typ=FLAGS.start_patch).cuda(cuda_device_id)
   nps_gpu = NPSCalculator(FLAGS.printable_vals_filepath, FLAGS.patch_square_length).cuda(cuda_device_id)
   tv_gpu = TotalVariationCalculator().cuda(cuda_device_id)
@@ -57,37 +58,38 @@ def main(argv):
     epoch_weighted_detection_loss_sum = 0.0
     epoch_weighted_printability_loss_sum = 0.0
     epoch_weighted_patch_variation_loss_sum = 0.0
-    for batch_index, (images, labels_dict) in enumerate(train_loader):
+    for batch_index, (images, normed_labels_dict) in enumerate(train_loader):
       with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
         adv_patch_gpu = patch_module_gpu()
-        outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=labels_dict,
+        outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=normed_labels_dict,
                                                                     patch_2d=adv_patch_gpu)
         for target_name in outputs_by_target:
           setting = target_settings[target_name]
           if setting is 1 or setting is 2:
             # [batch_size, num_predictions] confidence
             # [batch_size, num_predictions, 2] cx_cy
-            confidences, cx_cy, labels_on_device = outputs_by_target[target_name][0]
+            confidences, cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
             # [1]
-            extracted_confidence = torch.mean(process(confidences, cx_cy, FLAGS.confidence_processor, labels_on_device))
+            extracted_confidence = torch.mean(process(confidences, cx_cy, FLAGS.confidence_processor, normed_labels_on_device))
           elif setting is 3:
             object_coef = flags_dict['%s_object_weight'%target_name]
             person_coef = 1 - object_coef
             # [batch_size, num_predictions] confidence
             # [batch_size, num_predictions, 2] cx_cy
-            person_confidences, person_cx_cy, labels_on_device = outputs_by_target[target_name][0]
-            object_confidences, object_cx_cy, labels_on_device = outputs_by_target[target_name][1]
+            person_confidences, person_cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
+            object_confidences, object_cx_cy, normed_labels_on_device = outputs_by_target[target_name][1]
             # [batch_size]
             extracted_person_confidences = process(person_confidences, person_cx_cy, FLAGS.confidence_processor,
-                                                   labels_on_device)
+                                                   normed_labels_on_device)
             extracted_object_confidences = process(object_confidences, object_cx_cy, FLAGS.confidence_processor,
-                                                   labels_on_device)
+                                                   normed_labels_on_device)
             # [1]
             extracted_confidence = object_coef * torch.mean(extracted_object_confidences)\
                                    + person_coef * torch.mean(extracted_person_confidences)
           else:
             assert False
           target_extracted_confidences_gpu_dict[target_name] = extracted_confidence
+          if FLAGS.verbose: print(target_name, extracted_confidence)
         # [num_target]
         target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
         # [1]
