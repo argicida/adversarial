@@ -22,7 +22,7 @@ from implementations.ssd.vision.ssd.vgg_ssd import create_vgg_ssd, create_vgg_ss
 VISUAL_DEBUG = False
 PRINT_NMS_OUTPUT = False
 
-def test_on_all_detectors(images_dir, patchfile):
+def test_on_all_detectors(images_dir, patch_path):
     yolov2 = load_yolov2(0)
     ssd = load_ssd(0)
     yolov3 = load_yolov3(0)
@@ -34,7 +34,7 @@ def test_on_all_detectors(images_dir, patchfile):
     patch_size = 300
 
     # Transform image to correct size
-    patch_img = Image.open(patchfile).convert('RGB')
+    patch_img = Image.open(patch_path).convert('RGB')
     tf = transforms.Resize((patch_size,patch_size))
     patch_img = tf(patch_img)
     # create tensor to represent image
@@ -87,9 +87,13 @@ def test_on_all_detectors(images_dir, patchfile):
             if VISUAL_DEBUG:
                 # show detections using pyplot state altered by detection functions
                 plt.show()
-    patch_statistics_filepath = os.path.join(*os.path.splitext(patchfile)[0:-1]) + '.csv'
-    statistics.to_csv(patch_statistics_filepath, index=False)
+    statistics.to_csv(statistics_save_path(patch_path), index=False)
     return statistics
+
+
+def statistics_save_path(patch_path:str) -> str:
+    return os.path.join(*os.path.splitext(patch_path)[0:-1]) + '.csv'
+
 
 def test_on_target(adv_patch, padded_img, image_dir, image_filename, target_function, target_wrapper_function,
                    target:str, input_size_sqrt:int, statistics:pd.DataFrame):
@@ -412,7 +416,7 @@ for supported in DETECTOR_LOADERS_N_WRAPPERS:
 def main():
     images_dir = "inria/Test/pos"
     example_patch = "saved_patches/perry_08-26_500_epochs.jpg"
-    stats = test_on_all_detectors(images_dir=images_dir, patchfile=example_patch)
+    stats = test_on_all_detectors(images_dir=images_dir, patch_path=example_patch)
     print(stats)
 
 if __name__ == '__main__':

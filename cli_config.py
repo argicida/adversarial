@@ -48,15 +48,18 @@ flags.DEFINE_boolean(name="debug_coords", default=False, help="whether to use ex
                                                               "debugging detector coordinates output")
 flags.DEFINE_boolean(name="plot_patches", default=False, help="whether to use matplotlib to display patched images")
 
-# testing settings
+# patch evaluation settings
 for detector_name in SUPPORTED_TEST_DETECTORS:
-  flags.DEFINE_boolean(name="test_%s"%detector_name, default=False,
-                       help="whether to test patch against %s"%detector_name)
+  flags.DEFINE_boolean(name="eval_%s"%detector_name, default=False,
+                       help="whether to evaluate patch against %s"%detector_name)
 
 # data settings
 flags.DEFINE_integer(name="max_labs", default=14, help="maximum number of bounding boxes to load in per image, "
                                                        "decides label tensor size and processing speed")
-flags.DEFINE_string(name="inria_dir", default="inria/Train/pos", help="directory storing the people pics for INRIA")
+flags.DEFINE_string(name="inria_train_dir", default="inria/Train/pos",
+                    help="directory storing the people pics for INRIA train set")
+flags.DEFINE_string(name="inria_test_dir", default="inria/Test/pos",
+                    help="directory storing the people pics for INRIA test set")
 flags.DEFINE_integer(name="init_size", default=608, help="initial side length of loaded image")
 flags.DEFINE_integer(name="num_workers", default=8, help="number of threaded workers for loading data")
 flags.DEFINE_string(name="printable_vals_filepath", default="non_printability/30values.txt",

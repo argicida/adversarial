@@ -1,6 +1,7 @@
 import torch
 import os
 import json
+import pandas as pd
 from absl import app
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -11,8 +12,10 @@ from detectors_manager import SUPPORTED_TRAIN_DETECTORS, Manager
 from patch_utilities import SquarePatch, NPSCalculator, TotalVariationCalculator
 from detections_map_processors import check_detector_output_processor_exists, process
 from tensorboardX import SummaryWriter
+from test_patch import test_on_all_detectors, statistics_save_path, SUPPORTED_TEST_DETECTORS
 
-def main(argv):
+
+def train():
   # INITIALIZATION
   if FLAGS.verbose: print("Initializing")
   if not os.path.exists(FLAGS.logdir):
@@ -32,7 +35,8 @@ def main(argv):
       if setting != 0:
         target_settings[candidate] = flags_dict[key]
         target_devices[candidate] = cuda_device_id
-  train_loader = DataLoader(InriaDataset(FLAGS.inria_dir, FLAGS.max_labs, FLAGS.init_size, list(target_settings.keys())),
+  train_loader = DataLoader(InriaDataset(FLAGS.inria_train_dir, FLAGS.max_labs, FLAGS.init_size,
+                                         list(target_settings.keys())),
                             batch_size=FLAGS.bs, num_workers=FLAGS.num_workers, shuffle=True)
   iterations_per_epoch = len(train_loader)
   targets_manager = Manager(target_devices, target_settings, activate_logits=FLAGS.activate_logits,
@@ -135,7 +139,7 @@ def main(argv):
     lr_scheduler.step(epoch_total_loss_mean)
     adv_patch_cpu_tensor = adv_patch_gpu.detach().cpu()
     im = transforms.ToPILImage('RGB')(adv_patch_cpu_tensor)
-    im.save(os.path.join(FLAGS.logdir, "patch.png"), "PNG")
+    im.save(_patch_path(), "PNG")
     if FLAGS.tensorboard_epoch:
       # calculate statistics
       epoch_weighted_detection_loss_mean = epoch_weighted_detection_loss_sum/iterations_per_epoch
@@ -152,6 +156,41 @@ def main(argv):
                                       epoch)
       tensorboard_writer.add_image('patch', adv_patch_cpu_tensor.numpy(), epoch) # tensorboard colors are buggy
     if FLAGS.verbose: print('EPOCH LOSS: %.3f\n'%epoch_total_loss_mean)
+
+
+def worst_case_iou(detector_statistics, evaluated_detector_names):
+  selected_rows = detector_statistics['target'].apply(lambda el: el in evaluated_detector_names)
+  subset = detector_statistics[selected_rows]
+  return subset['patch_grand_iou'].max()
+
+
+def generate_statistics_and_scalar_metric():
+  test_on_all_detectors(FLAGS.inria_test_dir, _patch_path())
+  evaluated_detector_names = []
+  flags_dict = FLAGS.flag_values_dict()
+  for detector_name in SUPPORTED_TEST_DETECTORS:
+    key = "eval_%s" % detector_name
+    if key in flags_dict:
+      if flags_dict[key]:
+        evaluated_detector_names.append(detector_name)
+  test_statistics_file_path = statistics_save_path(_patch_path())
+  detector_statistics = pd.read_csv(test_statistics_file_path)
+  metric = worst_case_iou(detector_statistics, evaluated_detector_names)
+  metric_path = os.path.join(FLAGS.logdir, "metric.txt")
+  textfile = open(metric_path, 'w+')
+  textfile.write(f'{metric}\n')
+  textfile.close()
+  if FLAGS.verbose: print('Metric saved to %s\n' % metric_path)
+
+
+def _patch_path():
+  return os.path.join(FLAGS.logdir, "patch.png")
+
+
+def main(argv):
+  train()
+  torch.cuda.empty_cache()
+  generate_statistics_and_scalar_metric()
 
 
 if __name__ == '__main__':
