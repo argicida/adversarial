@@ -28,13 +28,15 @@ def train():
   cuda_device_id = 0 # we only use a single GPU at the moment
   target_settings = {}
   target_devices = {}
+  target_prior_weight = {}
   for candidate in SUPPORTED_TRAIN_DETECTORS:
-    key = "train_%s"%candidate
-    if key in flags_dict:
-      setting = flags_dict[key]
-      if setting != 0:
-        target_settings[candidate] = flags_dict[key]
-        target_devices[candidate] = cuda_device_id
+    setting_key = "train_%s"%candidate
+    prior_weight_key = "%s_object_weight"%candidate
+    setting = flags_dict[setting_key]
+    if setting != 0:
+      target_settings[candidate] = flags_dict[setting_key]
+      target_prior_weight[candidate] = flags_dict[prior_weight_key]
+      target_devices[candidate] = cuda_device_id
   train_loader = DataLoader(InriaDataset(FLAGS.inria_train_dir, FLAGS.max_labs, FLAGS.init_size,
                                          list(target_settings.keys())),
                             batch_size=FLAGS.bs, num_workers=FLAGS.num_workers, shuffle=True)
@@ -45,12 +47,21 @@ def train():
   patch_module_gpu = SquarePatch(patch_size=FLAGS.patch_square_length, typ=FLAGS.start_patch).cuda(cuda_device_id)
   nps_gpu = NPSCalculator(FLAGS.printable_vals_filepath, FLAGS.patch_square_length).cuda(cuda_device_id)
   tv_gpu = TotalVariationCalculator().cuda(cuda_device_id)
-  optimizer = torch.optim.Adam(patch_module_gpu.parameters(), lr=FLAGS.lr)
-  lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=FLAGS.plateau_patience)
+  patch_optimizer = torch.optim.Adam(patch_module_gpu.parameters(), lr=FLAGS.lr)
+  patch_lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(patch_optimizer, 'min', patience=FLAGS.plateau_patience)
 
-  num_targets = len(target_settings)
-  static_ensemble_weights_gpu = torch.full([num_targets], fill_value=1/num_targets,
-                                       device=torch.device('cuda:%i'%cuda_device_id))
+  ensemble_weights_gpu = torch.tensor([target_prior_weight[target] for target in target_settings],
+                                      dtype=torch.float, device=torch.device('cuda:%i'%cuda_device_id),
+                                      requires_grad=FLAGS.minimax)
+  prior_ensemble_weights_gpu = ensemble_weights_gpu.detach().clone()
+  norm_prior_ensemble_weights_gpu = prior_ensemble_weights_gpu/torch.sum(prior_ensemble_weights_gpu)
+
+  optimizer_class_init_func = {
+    "adam": lambda: torch.optim.Adam(ensemble_weights_gpu, lr=FLAGS.max_lr),
+    "sgd": lambda: torch.optim.SGD(ensemble_weights_gpu, lr=FLAGS.max_lr)
+  }
+  ensemble_weights_optimizer = optimizer_class_init_func[FLAGS.max_optim]() if FLAGS.minimax else None
+
   if FLAGS.verbose: print("Session Initialized")
 
   # TRAINING
@@ -74,7 +85,8 @@ def train():
             # [batch_size, num_predictions, 2] cx_cy
             confidences, cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
             # [1]
-            extracted_confidence = torch.mean(process(confidences, cx_cy, FLAGS.confidence_processor, normed_labels_on_device))
+            extracted_confidence = torch.mean(process(confidences, cx_cy, FLAGS.confidence_processor,
+                                                      normed_labels_on_device))
           elif setting is 3:
             object_coef = flags_dict['%s_object_weight'%target_name]
             person_coef = 1 - object_coef
@@ -96,16 +108,33 @@ def train():
           if FLAGS.verbose: print(target_name, extracted_confidence)
         # [num_target]
         target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
-        # [1]
-        detection_loss_gpu = torch.matmul(static_ensemble_weights_gpu, target_extracted_confidences_tensor)
+
+        if FLAGS.minimax:
+          # MAX STEP
+          normalized_ensemble_weights_gpu = ensemble_weights_gpu / ensemble_weights_gpu.sum()
+          # prevent backpropagation through detectors during max step to save computation - only needed during min step
+          detached_target_extracted_confidences_tensor = target_extracted_confidences_tensor.detach()
+          # [1]
+          detection_loss_gpu = torch.matmul(normalized_ensemble_weights_gpu,
+                                            detached_target_extracted_confidences_tensor)
+          prior_l2_distance = torch.dist(normalized_ensemble_weights_gpu, norm_prior_ensemble_weights_gpu, p=2)
+          max_loss = -detection_loss_gpu + FLAGS.minimax_gamma * prior_l2_distance
+          max_loss.backward()
+          ensemble_weights_optimizer.step()
+          ensemble_weights_optimizer.zero_grad()
+          detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
+        else:
+          detached_norm_ensemble_weights_gpu = norm_prior_ensemble_weights_gpu
+        # MIN STEP
+        detection_loss_gpu = torch.matmul(detached_norm_ensemble_weights_gpu, target_extracted_confidences_tensor)
         printability_loss_gpu = FLAGS.lambda_nps * nps_gpu(adv_patch_gpu)
         patch_variation_loss_gpu = FLAGS.lambda_tv * tv_gpu(adv_patch_gpu)
         total_loss_gpu = detection_loss_gpu + printability_loss_gpu + patch_variation_loss_gpu
 
         # GRADIENT UPDATE
         total_loss_gpu.backward()
-        optimizer.step()
-        optimizer.zero_grad()
+        patch_optimizer.step()
+        patch_optimizer.zero_grad()
 
         # BATCH LOGGING
         total_loss_cpu = total_loss_gpu.detach().cpu().numpy()
@@ -136,7 +165,7 @@ def train():
 
     # EPOCH LOGGING & LR SCHEDULING
     epoch_total_loss_mean = epoch_total_loss_sum/iterations_per_epoch
-    lr_scheduler.step(epoch_total_loss_mean)
+    patch_lr_scheduler.step(epoch_total_loss_mean)
     adv_patch_cpu_tensor = adv_patch_gpu.detach().cpu()
     im = transforms.ToPILImage('RGB')(adv_patch_cpu_tensor)
     im.save(_patch_path(), "PNG")
