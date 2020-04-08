@@ -16,21 +16,15 @@ flags.DEFINE_float(name="lr", default=0.03, lower_bound=0, help="learning rate")
 flags.DEFINE_integer(name="bs", default=8, lower_bound=0, help="batch size")
 flags.DEFINE_integer(name="plateau_patience", default=8, lower_bound=0, help="max number of updates without decrease in "
                                                                              "loss or learning rate")
-
-flags.DEFINE_boolean(name="minimax", default=False, help="whether to use minimax formulation to minimize worst case loss")
-flags.DEFINE_float(name="minimax_gamma", default=1, lower_bound=0, help="at 0, ensemble prior has no importance. at "
-                                                                        "infinity, minimax is not doing anything other "
-                                                                        "than using the prior ensemble weights")
-flags.DEFINE_float(name="max_lr", default=0.03, lower_bound=0, help="learning rate for ensemble weights update")
-flags.DEFINE_enum(name="max_optim", default="sgd", enum_values=["sgd", "adam"], help="choice of optimizer for max step")
-
+flags.DEFINE_boolean(name="activate_logits", default=True, help="whether to use probabilities instead of logits when "
+                                                                "extracting detection confidence")
 for detector_name in SUPPORTED_TRAIN_DETECTORS:
   flags.DEFINE_integer(name="train_%s"%detector_name, default=0,
                        lower_bound=0, upper_bound=SUPPORTED_TRAIN_DETECTORS[detector_name],
                        help="whether to train patch against %s, 0 for off, "
                             "other positive number for other setting"%detector_name)
-  flags.DEFINE_float(name="%s_prior_weight"%detector_name, default=0, lower_bound=0, upper_bound=1000,
-                     help="the pre-normalized weight assigned to the extracted output of the detector")
+  flags.DEFINE_float(name="%s_prior_weight"%detector_name, default=0, lower_bound=-100, upper_bound=100,
+                     help="the pre-softmax weight assigned to the extracted output of the detector")
   if SUPPORTED_TRAIN_DETECTORS[detector_name] == 3:
     flags.DEFINE_float(name="%s_object_weight"%detector_name, default=0.9, lower_bound=0, upper_bound=1,
                        help="how much is object confidence weighted relative to class confidence "
@@ -39,8 +33,13 @@ for detector_name in SUPPORTED_TRAIN_DETECTORS:
 flags.DEFINE_enum(name="confidence_processor", default="max",
                   enum_values=uninformed_detections_processor_choices()+informed_detections_processor_choices(),
                   help="choice of confidence extraction function, %s"%str(processor_choices()))
-flags.DEFINE_boolean(name="activate_logits", default=False, help="whether to use probabilities instead of logits when "
-                                                                 "extracting detection confidence")
+
+flags.DEFINE_boolean(name="minimax", default=False, help="whether to use minimax formulation to minimize worst case loss")
+flags.DEFINE_float(name="minimax_gamma", default=1, lower_bound=0, help="at 0, ensemble prior has no importance. at "
+                                                                        "infinity, minimax is not doing anything other "
+                                                                        "than using the prior ensemble weights")
+flags.DEFINE_float(name="max_lr", default=0.03, lower_bound=0, help="learning rate for ensemble weights update")
+flags.DEFINE_enum(name="max_optim", default="adam", enum_values=["sgd", "adam"], help="choice of optimizer for max step")
 
 # physical realizability parameters
 flags.DEFINE_float(name="lambda_nps", default=0.01, help="multiplier for non printability score")

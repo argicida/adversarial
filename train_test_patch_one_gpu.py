@@ -5,6 +5,7 @@ import pandas as pd
 from absl import app
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from torch.nn import functional as F
 
 from cli_config import FLAGS
 from inria import InriaDataset
@@ -54,11 +55,11 @@ def train():
                                       dtype=torch.float, device=torch.device('cuda:%i'%cuda_device_id),
                                       requires_grad=FLAGS.minimax)
   prior_ensemble_weights_gpu = ensemble_weights_gpu.detach().clone()
-  norm_prior_ensemble_weights_gpu = prior_ensemble_weights_gpu/torch.sum(prior_ensemble_weights_gpu)
+  norm_prior_ensemble_weights_gpu = F.softmax(prior_ensemble_weights_gpu, dim=0)
 
   optimizer_class_init_func = {
-    "adam": lambda: torch.optim.Adam(ensemble_weights_gpu, lr=FLAGS.max_lr),
-    "sgd": lambda: torch.optim.SGD(ensemble_weights_gpu, lr=FLAGS.max_lr)
+    "adam": lambda: torch.optim.Adam([ensemble_weights_gpu], lr=FLAGS.max_lr),
+    "sgd": lambda: torch.optim.SGD([ensemble_weights_gpu], lr=FLAGS.max_lr)
   }
   ensemble_weights_optimizer = optimizer_class_init_func[FLAGS.max_optim]() if FLAGS.minimax else None
 
@@ -70,6 +71,7 @@ def train():
     if FLAGS.verbose: print('  EPOCH NR: ', epoch)
     epoch_total_loss_sum = 0.0
     epoch_unweighted_detector_loss_sum = {detector_name:0.0 for detector_name in target_settings}
+    epoch_ensemble_weights_sum = {detector_name:0.0 for detector_name in target_settings}
     epoch_weighted_detection_loss_sum = 0.0
     epoch_weighted_printability_loss_sum = 0.0
     epoch_weighted_patch_variation_loss_sum = 0.0
@@ -105,13 +107,15 @@ def train():
           else:
             assert False
           target_extracted_confidences_gpu_dict[target_name] = extracted_confidence
-          if FLAGS.verbose: print(target_name, extracted_confidence)
         # [num_target]
         target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
+        if FLAGS.verbose: print("Dict Out", target_extracted_confidences_gpu_dict,
+                                "Stacked Out, ", target_extracted_confidences_tensor)
 
         if FLAGS.minimax:
           # MAX STEP
-          normalized_ensemble_weights_gpu = ensemble_weights_gpu / ensemble_weights_gpu.sum()
+          normalized_ensemble_weights_gpu = F.softmax(ensemble_weights_gpu, dim=0)
+          if FLAGS.verbose: print("Before Max Step, ", normalized_ensemble_weights_gpu)
           # prevent backpropagation through detectors during max step to save computation - only needed during min step
           detached_target_extracted_confidences_tensor = target_extracted_confidences_tensor.detach()
           # [1]
@@ -122,7 +126,9 @@ def train():
           max_loss.backward()
           ensemble_weights_optimizer.step()
           ensemble_weights_optimizer.zero_grad()
+          normalized_ensemble_weights_gpu = F.softmax(ensemble_weights_gpu, dim=0)
           detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
+          if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
         else:
           detached_norm_ensemble_weights_gpu = norm_prior_ensemble_weights_gpu
         # MIN STEP
@@ -145,6 +151,8 @@ def train():
           patch_variation_loss_cpu = patch_variation_loss_gpu.detach().cpu().numpy()
           extracted_confidence_cpu_dict = {name:target_extracted_confidences_gpu_dict[name].detach().cpu().numpy()
                                            for name in target_extracted_confidences_gpu_dict}
+          ensemble_weights_cpu_dict = {name:detached_norm_ensemble_weights_gpu[idx].detach().cpu().numpy()
+                                       for idx, name in enumerate(target_settings)}
         if FLAGS.tensorboard_epoch:
           epoch_total_loss_sum += total_loss_cpu
           epoch_weighted_detection_loss_sum += detection_loss_cpu
@@ -152,6 +160,7 @@ def train():
           epoch_weighted_patch_variation_loss_sum += patch_variation_loss_cpu
           for target_name in target_extracted_confidences_gpu_dict:
             epoch_unweighted_detector_loss_sum[target_name] += extracted_confidence_cpu_dict[target_name]
+            epoch_ensemble_weights_sum[target_name] += ensemble_weights_cpu_dict[target_name]
         # write to log
         if FLAGS.tensorboard_batch:
           batch_iteration = iterations_per_epoch * epoch + batch_index
@@ -161,6 +170,8 @@ def train():
           tensorboard_writer.add_scalar('batch/patch_variation_loss', patch_variation_loss_cpu, batch_iteration)
           for target_name in target_extracted_confidences_gpu_dict:
             tensorboard_writer.add_scalar('batch/%s_unweighted_loss'%target_name,
+                                          extracted_confidence_cpu_dict[target_name], batch_iteration)
+            tensorboard_writer.add_scalar('batch/%s_ensemble_weight'%target_name,
                                           extracted_confidence_cpu_dict[target_name], batch_iteration)
 
     # EPOCH LOGGING & LR SCHEDULING
@@ -181,7 +192,10 @@ def train():
       tensorboard_writer.add_scalar('epoch/patch_variation_loss_mean', epoch_weighted_patch_variation_loss_mean, epoch)
       for target_name in epoch_unweighted_detector_loss_sum:
         epoch_unweighted_detector_loss_mean = epoch_unweighted_detector_loss_sum[target_name] / iterations_per_epoch
-        tensorboard_writer.add_scalar('epoch/%s_unweighted_loss_mean' % target_name, epoch_unweighted_detector_loss_mean,
+        epoch_detector_ensemble_weight_mean = epoch_ensemble_weights_sum[target_name] / iterations_per_epoch
+        tensorboard_writer.add_scalar('epoch/%s_unweighted_loss_mean'%target_name, epoch_unweighted_detector_loss_mean,
+                                      epoch)
+        tensorboard_writer.add_scalar('epoch/%s_ensemble_weight_mean'%target_name, epoch_detector_ensemble_weight_mean,
                                       epoch)
       tensorboard_writer.add_image('patch', adv_patch_cpu_tensor.numpy(), epoch) # tensorboard colors are buggy
     if FLAGS.verbose: print('EPOCH LOSS: %.3f\n'%epoch_total_loss_mean)

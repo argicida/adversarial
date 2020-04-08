@@ -11,6 +11,9 @@ for detector_name in SUPPORTED_TEST_DETECTORS:
 flags.DEFINE_string(name="inria_dir", default="inria/Train/pos", help="directory storing the people pics for INRIA")
 FLAGS = flags.FLAGS
 
+## USAGE EXAMPLE: python3 generate_train_labels.py --yolov2=True --ssd=True
+
+
 def main(argv):
   train_data_dir = FLAGS.inria_dir
   flags_dict = FLAGS.flag_values_dict()
