@@ -370,23 +370,23 @@ def wrapper_yolov2(image, darknet_model, input_w, input_h) -> pd.DataFrame:
 
 
 def load_yolov2(device) -> torch.nn.Module:
-    yolov2_cfgfile = "cfg/yolov2.cfg"
-    yolov2_weightfile = "weights/yolov2.weights"
+    yolov2_cfgfile = FLAGS.yolov2_cfg_file
+    yolov2_weightfile = FLAGS.yolov2_weight_file
     yolov2 = Yolov2(yolov2_cfgfile)
     yolov2.load_weights(yolov2_weightfile)
     return yolov2.eval().cuda(device)
 
 
 def load_yolov3(device) -> torch.nn.Module:
-    yolov3_cfgfile = "./implementations/yolov3/config/yolov3.cfg"
-    yolov3_weightfile = "./implementations/yolov3/weights/yolov3.weights"
+    yolov3_cfgfile = FLAGS.yolov3_cfg_file
+    yolov3_weightfile = FLAGS.yolov3_weight_file
     yolov3 = Yolov3(yolov3_cfgfile)
     yolov3.load_darknet_weights(yolov3_weightfile)
     return yolov3.cuda(device)
 
 
 def load_ssd(device) -> Callable:
-    ssd_weightfile = "./implementations/ssd/models/vgg16-ssd-mp-0_7726.pth"
+    ssd_weightfile = FLAGS.ssd_weight_file
     ssd = create_vgg_ssd(21, is_test=True)
     ssd.load(ssd_weightfile)
     ssd = ssd.cuda(device)
@@ -414,8 +414,8 @@ for supported in DETECTOR_LOADERS_N_WRAPPERS:
     SUPPORTED_TEST_DETECTORS.append(supported)
 
 def main():
-    images_dir = "inria/Test/pos"
-    example_patch = "saved_patches/perry_08-26_500_epochs.jpg"
+    images_dir = FLAGS.inria_test_dir
+    example_patch = FLAGS.example_patch_file
     stats = test_on_all_detectors(images_dir=images_dir, patch_path=example_patch)
     print(stats)
 

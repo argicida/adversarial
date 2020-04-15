@@ -219,8 +219,8 @@ class _AbstractYolov2(_AbstractDetector):
     self.cuda_device = torch.device("cuda:%i"%self.device)
 
   def _load_model(self, device:int) -> torch.nn.Module:
-    cfg_file = "cfg/yolov2.cfg"
-    weight_file = "weights/yolov2.weights"
+    cfg_file = FLAGS.yolov2_cfg_file
+    weight_file = FLAGS.yolov2_weight_file
     yolov2 = Darknet(cfg_file)
     yolov2.load_weights(weight_file)
     return yolov2.eval().cuda(device)
@@ -286,7 +286,7 @@ class _AbstractSSD(_AbstractDetector):
     self.person_cls_id = 15
 
   def _load_model(self, device: int) -> torch.nn.Module:
-    weightfile = "./implementations/ssd/models/vgg16-ssd-mp-0_7726.pth"
+    weightfile = FLAGS.ssd_weight_file
     voc_num_classes = 21
     # setting is_test to false since we dont need boxes, just confidence logits
     ssd = create_vgg_ssd(voc_num_classes, is_test=False)
@@ -335,8 +335,8 @@ class _AbstractYolov3(_AbstractDetector):
     self.w_h_tensor = torch.tensor([self.input_w, self.input_h], dtype=torch.float).cuda(torch.device("cuda:%i" % self.device))
 
   def _load_model(self, device: int) -> torch.nn.Module:
-    cfg_file = "./implementations/yolov3/config/yolov3.cfg"
-    weight_file = "./implementations/yolov3/weights/yolov3.weights"
+    cfg_file = FLAGS.yolov3_cfg_file
+    weight_file = FLAGS.yolov3_weight_file
     yolov3 = Yolov3(cfg_file)
     yolov3.load_darknet_weights(weight_file)
     return yolov3.eval().cuda(device)

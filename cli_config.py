@@ -74,6 +74,18 @@ flags.DEFINE_integer(name="init_size", default=608, help="initial side length of
 flags.DEFINE_integer(name="num_workers", default=8, help="number of threaded workers for loading data")
 flags.DEFINE_string(name="printable_vals_filepath", default="non_printability/30values.txt",
                     help="txt file containing vector of printable rgb values for calculation non printability score")
+flags.DEFINE_string(name="yolov2_cfg_file", default="cfg/yolov2.cfg",
+                    help="directory for yolov2 cfg file")
+flags.DEFINE_string(name="yolov2_weight_file", default="weights/yolov2.weights",
+                    help="directory for yolov2 weight file")
+flags.DEFINE_string(name="yolov3_cfg_file", default="./implementations/yolov3/config/yolov3.cfg",
+                    help="directory for yolov3 cfg file")
+flags.DEFINE_string(name="yolov3_weight_file", default="./implementations/yolov3/weights/yolov3.weights",
+                    help="directory for yolov3 weight file")
+flags.DEFINE_string(name="ssd_weight_file", default="./implementations/ssd/models/vgg16-ssd-mp-0_7726.pth",
+                    help="directory for ssd weight file")
+flags.DEFINE_string(name="example_patch_file", default="saved_patches/perry_08-26_500_epochs.jpg",
+                    help="directory for example patch file")
 
 # logging settings
 _init_time = datetime.now()
