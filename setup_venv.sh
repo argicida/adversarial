@@ -10,4 +10,8 @@ pip install tensorboardx
 pip install tensorboard
 pip install opencv-python
 pip install --extra-index-url https://developer.download.nvidia.com/compute/redist/cuda/10.0 nvidia-dali
+pip install torchvision
+pip install -U ray
+pip install 'ray[tune]'
+pip install hpbandster ConfigSpace
 deactivate

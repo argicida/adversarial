@@ -11,10 +11,10 @@ from ray.tune.schedulers.hb_bohb import HyperBandForBOHB
 from ray.tune.suggest.bohb import TuneBOHB
 
 
-n_epochs = 50
+n_epochs = 10
 
 def train_one_gpu(config):
-    flags = f'python3 ../../train_test_patch_one_gpu.py --eval_yolov2=True --eval_ssd=True --eval_yolov3=True --n_epochs={n_epochs} --bs=8 --inria_train_dir=../../inria/Train/pos --printable_vals_filepath=../../non_printability/30values.txt --inria_test_dir=../../inria/Test/pos --logdir=../../logs'
+    flags = f'python3 ../../train_test_patch_one_gpu.py --eval_yolov2=True --eval_ssd=True --eval_yolov3=True --n_epochs={n_epochs} --bs=8 --inria_train_dir=../../inria/Train/pos --printable_vals_filepath=../../non_printability/30values.txt --inria_test_dir=../../inria/Test/pos --logdir=../../logs --yolov2_cfg_file=../../cfg/yolov2.cfg --yolov2_weight_file=../../weights/yolov2.weights --yolov3_cfg_file=../../implementations/yolov3/config/yolov3.cfg --yolov3_weight_file=../../implementations/yolov3/weights/yolov3.weights --ssd_weight_file=../../implementations/ssd/models/vgg16-ssd-mp-0_7726.pth --example_patch_file=../../saved_patches/perry_08-26_500_epochs.jpg'
     for i in config:
       flags+=f' --{i}={str(config[i])}' 
     os.system(flags)
@@ -23,7 +23,7 @@ def train_one_gpu(config):
       metric = float(textfile.readline())
       textfile.close()
       os.remove("../../logs/metric.txt")
-      tune.track.log(worst_case_iou=metric)
+      tune.track.log(worst_case_iou=metric, training_iteration=n_epochs)
     else:
       print("Trial didnt work idfk why figure it out")
     
@@ -73,7 +73,7 @@ config_space.add_hyperparameter(yolov3_object_weight_hp)
 config_space.add_condition(CS.EqualsCondition(yolov3_object_weight_hp, train_yolov3_hp, "3"))
 
 experiment_metrics = dict(metric="worst_case_iou", mode="min")
-bohb_hyperband = HyperBandForBOHB(time_attr="time_total_s",max_t=10000,reduction_factor=4,**experiment_metrics)
+bohb_hyperband = HyperBandForBOHB(time_attr="training_iteration",max_t=n_epochs,**experiment_metrics)
 bohb_search = TuneBOHB(config_space, **experiment_metrics)
 
 analysis = tune.run(train_one_gpu,

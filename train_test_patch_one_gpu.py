@@ -32,7 +32,7 @@ def train():
   target_prior_weight = {}
   for candidate in SUPPORTED_TRAIN_DETECTORS:
     setting_key = "train_%s"%candidate
-    prior_weight_key = "%s_object_weight"%candidate
+    prior_weight_key = "%s_prior_weight"%candidate
     setting = flags_dict[setting_key]
     if setting != 0:
       target_settings[candidate] = flags_dict[setting_key]

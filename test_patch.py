@@ -18,6 +18,8 @@ from implementations.yolov3.utils import utils as yolov3_utils
 
 from implementations.ssd.vision.ssd.vgg_ssd import create_vgg_ssd, create_vgg_ssd_predictor
 
+import cli_config
+
 
 VISUAL_DEBUG = False
 PRINT_NMS_OUTPUT = False
@@ -370,23 +372,23 @@ def wrapper_yolov2(image, darknet_model, input_w, input_h) -> pd.DataFrame:
 
 
 def load_yolov2(device) -> torch.nn.Module:
-    yolov2_cfgfile = FLAGS.yolov2_cfg_file
-    yolov2_weightfile = FLAGS.yolov2_weight_file
+    yolov2_cfgfile = cli_config.FLAGS.yolov2_cfg_file
+    yolov2_weightfile = cli_config.FLAGS.yolov2_weight_file
     yolov2 = Yolov2(yolov2_cfgfile)
     yolov2.load_weights(yolov2_weightfile)
     return yolov2.eval().cuda(device)
 
 
 def load_yolov3(device) -> torch.nn.Module:
-    yolov3_cfgfile = FLAGS.yolov3_cfg_file
-    yolov3_weightfile = FLAGS.yolov3_weight_file
+    yolov3_cfgfile = cli_config.FLAGS.yolov3_cfg_file
+    yolov3_weightfile = cli_config.FLAGS.yolov3_weight_file
     yolov3 = Yolov3(yolov3_cfgfile)
     yolov3.load_darknet_weights(yolov3_weightfile)
     return yolov3.cuda(device)
 
 
 def load_ssd(device) -> Callable:
-    ssd_weightfile = FLAGS.ssd_weight_file
+    ssd_weightfile = cli_config.FLAGS.ssd_weight_file
     ssd = create_vgg_ssd(21, is_test=True)
     ssd.load(ssd_weightfile)
     ssd = ssd.cuda(device)
@@ -414,8 +416,8 @@ for supported in DETECTOR_LOADERS_N_WRAPPERS:
     SUPPORTED_TEST_DETECTORS.append(supported)
 
 def main():
-    images_dir = FLAGS.inria_test_dir
-    example_patch = FLAGS.example_patch_file
+    images_dir = cli_config.FLAGS.inria_test_dir
+    example_patch = cli_config.FLAGS.example_patch_file
     stats = test_on_all_detectors(images_dir=images_dir, patch_path=example_patch)
     print(stats)
 

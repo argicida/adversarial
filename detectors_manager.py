@@ -16,6 +16,8 @@ from implementations.ssd.vision.utils.box_utils import convert_locations_to_boxe
 
 from patch_utilities import SquarePatchTransformApplier
 
+import cli_config
+
 
 # some of these have multiple output types, such as class confidence and object confidence, so multiple setting
 SUPPORTED_TRAIN_DETECTORS = {'yolov2':3, # 1: class only, 2: object only, 3: object and class
@@ -219,8 +221,8 @@ class _AbstractYolov2(_AbstractDetector):
     self.cuda_device = torch.device("cuda:%i"%self.device)
 
   def _load_model(self, device:int) -> torch.nn.Module:
-    cfg_file = FLAGS.yolov2_cfg_file
-    weight_file = FLAGS.yolov2_weight_file
+    cfg_file = cli_config.FLAGS.yolov2_cfg_file
+    weight_file = cli_config.FLAGS.yolov2_weight_file
     yolov2 = Darknet(cfg_file)
     yolov2.load_weights(weight_file)
     return yolov2.eval().cuda(device)
@@ -286,7 +288,7 @@ class _AbstractSSD(_AbstractDetector):
     self.person_cls_id = 15
 
   def _load_model(self, device: int) -> torch.nn.Module:
-    weightfile = FLAGS.ssd_weight_file
+    weightfile = cli_config.FLAGS.ssd_weight_file
     voc_num_classes = 21
     # setting is_test to false since we dont need boxes, just confidence logits
     ssd = create_vgg_ssd(voc_num_classes, is_test=False)
@@ -335,8 +337,8 @@ class _AbstractYolov3(_AbstractDetector):
     self.w_h_tensor = torch.tensor([self.input_w, self.input_h], dtype=torch.float).cuda(torch.device("cuda:%i" % self.device))
 
   def _load_model(self, device: int) -> torch.nn.Module:
-    cfg_file = FLAGS.yolov3_cfg_file
-    weight_file = FLAGS.yolov3_weight_file
+    cfg_file = cli_config.FLAGS.yolov3_cfg_file
+    weight_file = cli_config.FLAGS.yolov3_weight_file
     yolov3 = Yolov3(cfg_file)
     yolov3.load_darknet_weights(weight_file)
     return yolov3.eval().cuda(device)
