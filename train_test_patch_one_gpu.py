@@ -208,7 +208,7 @@ def worst_case_iou(detector_statistics, evaluated_detector_names):
 
 
 def generate_statistics_and_scalar_metric():
-  test_on_all_detectors(FLAGS.inria_test_dir, _patch_path())
+  detector_statistics = test_on_all_detectors(FLAGS.inria_test_dir, _patch_path())
   evaluated_detector_names = []
   flags_dict = FLAGS.flag_values_dict()
   for detector_name in SUPPORTED_TEST_DETECTORS:
@@ -216,8 +216,6 @@ def generate_statistics_and_scalar_metric():
     if key in flags_dict:
       if flags_dict[key]:
         evaluated_detector_names.append(detector_name)
-  test_statistics_file_path = statistics_save_path(_patch_path())
-  detector_statistics = pd.read_csv(test_statistics_file_path)
   metric = worst_case_iou(detector_statistics, evaluated_detector_names)
   metric_path = os.path.join(FLAGS.logdir, "metric.txt")
   textfile = open(metric_path, 'w+')
