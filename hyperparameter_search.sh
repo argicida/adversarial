@@ -23,7 +23,7 @@
 
 # run time request
 # day-hour:minute:second
-#SBATCH -t 1-0:0:0
+#SBATCH -t 5-0:0:0
 
 
 # use the "blackbox" account, which corresponds to our project name

@@ -13,5 +13,6 @@ pip install --extra-index-url https://developer.download.nvidia.com/compute/redi
 pip install torchvision
 pip install -U ray
 pip install 'ray[tune]'
+module unload blindfold
 pip install hpbandster ConfigSpace
 deactivate
