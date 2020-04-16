@@ -3,7 +3,7 @@ import sys
 import torch
 import numpy as np
 import pandas as pd
-from absl import app
+from absl import app, flags
 from torchvision import transforms
 from PIL import Image
 from typing import Callable
@@ -19,8 +19,8 @@ from implementations.yolov3.utils import utils as yolov3_utils
 
 from implementations.ssd.vision.ssd.vgg_ssd import create_vgg_ssd, create_vgg_ssd_predictor
 
-from cli_config import FLAGS
-
+import cli_config # defines the flags, dont remove this line
+FLAGS = flags.FLAGS
 
 VISUAL_DEBUG = False
 PRINT_NMS_OUTPUT = False
@@ -416,7 +416,7 @@ SUPPORTED_TEST_DETECTORS = []
 for supported in DETECTOR_LOADERS_N_WRAPPERS:
     SUPPORTED_TEST_DETECTORS.append(supported)
 
-def main():
+def main(argv):
     images_dir = FLAGS.inria_test_dir
     example_patch = FLAGS.example_patch_file
     stats = test_on_all_detectors(images_dir=images_dir, patch_path=example_patch)

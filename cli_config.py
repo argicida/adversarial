@@ -84,7 +84,7 @@ flags.DEFINE_string(name="yolov3_weight_file", default="./implementations/yolov3
                     help="directory for yolov3 weight file")
 flags.DEFINE_string(name="ssd_weight_file", default="./implementations/ssd/models/vgg16-ssd-mp-0_7726.pth",
                     help="directory for ssd weight file")
-flags.DEFINE_string(name="example_patch_file", default="saved_patches/perry_08-26_500_epochs.jpg",
+flags.DEFINE_string(name="example_patch_file", default="legacy_patches/perry_08-26_500_epochs.jpg",
                     help="directory for example patch file")
 
 # logging settings

@@ -1,6 +1,5 @@
 import torch
 from PIL import Image
-from PIL import Image
 from matplotlib import pyplot as plt
 from matplotlib import patches
 import numpy as np
@@ -16,8 +15,10 @@ from implementations.ssd.vision.utils.box_utils import convert_locations_to_boxe
 
 from patch_utilities import SquarePatchTransformApplier
 
-from cli_config import FLAGS
+from absl import flags
 
+import cli_config # defines the flags, dont remove this line
+FLAGS = flags.FLAGS
 
 # some of these have multiple output types, such as class confidence and object confidence, so multiple setting
 SUPPORTED_TRAIN_DETECTORS = {'yolov2':3, # 1: class only, 2: object only, 3: object and class
