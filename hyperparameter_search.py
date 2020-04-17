@@ -14,15 +14,15 @@ from ray.tune.suggest.bohb import TuneBOHB
 n_epochs = 50
 
 def train_one_gpu(config):
-    flags = f'python3 ../../train_test_patch_one_gpu.py --eval_yolov2=True --eval_ssd=True --eval_yolov3=True --n_epochs={n_epochs} --bs=8 --inria_train_dir=../../inria/Train/pos --printable_vals_filepath=../../non_printability/30values.txt --inria_test_dir=../../inria/Test/pos --logdir=../../logs2 --yolov2_cfg_file=../../cfg/yolov2.cfg --yolov2_weight_file=../../weights/yolov2.weights --yolov3_cfg_file=../../implementations/yolov3/config/yolov3.cfg --yolov3_weight_file=../../implementations/yolov3/weights/yolov3.weights --ssd_weight_file=../../implementations/ssd/models/vgg16-ssd-mp-0_7726.pth --example_patch_file=../../saved_patches/perry_08-26_500_epochs.jpg'
+    flags = f'python3 ../../train_test_patch_one_gpu.py --eval_yolov2=True --eval_ssd=True --eval_yolov3=True --n_epochs={n_epochs} --bs=8 --inria_train_dir=../../inria/Train/pos --printable_vals_filepath=../../non_printability/30values.txt --inria_test_dir=../../inria/Test/pos --logdir=logs --yolov2_cfg_file=../../cfg/yolov2.cfg --yolov2_weight_file=../../weights/yolov2.weights --yolov3_cfg_file=../../implementations/yolov3/config/yolov3.cfg --yolov3_weight_file=../../implementations/yolov3/weights/yolov3.weights --ssd_weight_file=../../implementations/ssd/models/vgg16-ssd-mp-0_7726.pth --example_patch_file=../../saved_patches/perry_08-26_500_epochs.jpg'
     for i in config:
       flags+=f' --{i}={str(config[i])}' 
     os.system(flags)
-    if os.path.exists("../../logs2/metric.txt"):
-      textfile = open("../../logs2/metric.txt", 'r')
+    if os.path.exists("logs/metric.txt"):
+      textfile = open("logs/metric.txt", 'r')
       metric = float(textfile.readline())
       textfile.close()
-      os.remove("../../logs2/metric.txt")
+      os.remove("logs/metric.txt")
       tune.track.log(worst_case_iou=metric, done=True)
     else:
       print("Trial didnt work idfk why figure it out")
@@ -77,7 +77,7 @@ bohb_hyperband = HyperBandForBOHB(time_attr="training_iteration",max_t=n_epochs,
 bohb_search = TuneBOHB(config_space, **experiment_metrics)
 
 analysis = tune.run(train_one_gpu,
-    name="train_one_gpu_bohb",
+    name="train_one_gpu_bohb_results",
     scheduler=bohb_hyperband,
     search_alg=bohb_search,
     num_samples=100, resources_per_trial={"gpu":1}, local_dir="~/argicida")
