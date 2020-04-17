@@ -22,10 +22,10 @@ def train_one_gpu(config):
       textfile = open("logs/metric.txt", 'r')
       metric = float(textfile.readline())
       textfile.close()
-      os.remove("logs/metric.txt")
+      #os.remove("logs/metric.txt")
       tune.track.log(worst_case_iou=metric, done=True)
     else:
-      print("Trial didnt work idfk why figure it out")
+      print("Trial Failed!")
     
     
 config_space = CS.ConfigurationSpace()
