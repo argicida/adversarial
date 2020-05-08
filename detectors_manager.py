@@ -374,3 +374,14 @@ class _AbstractYolov3(_AbstractDetector):
 
   def single_image_nms_predictions(self, single_square_image: Image) -> np.ndarray:
     pass
+
+
+class EnsembleWeights(torch.nn.Module):
+  def __init__(self, target_prior_weight:dict):
+    super(EnsembleWeights, self).__init__()
+    self.params = torch.nn.Parameter(data=torch.tensor([target_prior_weight[target] for target in target_prior_weight],
+                                     dtype=torch.float))
+
+  def forward(self) -> torch.Tensor:
+    return F.softmax(self.params, dim=0)
+
