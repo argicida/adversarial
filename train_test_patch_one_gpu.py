@@ -1,19 +1,18 @@
 import torch
 import os
 import json
-import pandas as pd
 from absl import app
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from torch.nn import functional as F
+from ray.tune import track
 
 from cli_config import FLAGS
 from inria import InriaDataset
-from detectors_manager import SUPPORTED_TRAIN_DETECTORS, Manager
+from detectors_manager import SUPPORTED_TRAIN_DETECTORS, Manager, EnsembleWeights
 from patch_utilities import SquarePatch, NPSCalculator, TotalVariationCalculator
 from detections_map_processors import check_detector_output_processor_exists, process
 from tensorboardX import SummaryWriter
-from test_patch import test_on_all_detectors, statistics_save_path, SUPPORTED_TEST_DETECTORS
+from test_patch import test_on_all_detectors, SUPPORTED_TEST_DETECTORS
 
 
 def train():
@@ -24,7 +23,7 @@ def train():
   flags_dict = FLAGS.flag_values_dict()
   with open(os.path.join(FLAGS.logdir, 'flags.json'), 'w') as fp:
     json.dump(flags_dict, fp)
-  tensorboard_writer = SummaryWriter(logdir=FLAGS.logdir)
+  tensorboard_writer = SummaryWriter(logdir=FLAGS.logdir) if FLAGS.tensorboard_batch or FLAGS.tensorboard_epoch else None
   check_detector_output_processor_exists(FLAGS.confidence_processor)
   cuda_device_id = 0 # we only use a single GPU at the moment
   target_settings = {}
@@ -45,29 +44,19 @@ def train():
   targets_manager = Manager(target_devices, target_settings, activate_logits=FLAGS.activate_logits,
                             debug_autograd=FLAGS.debug_autograd, debug_device=FLAGS.debug_device,
                             debug_coords=FLAGS.debug_coords, plot_patches=FLAGS.plot_patches)
-  patch_module_gpu = SquarePatch(patch_size=FLAGS.patch_square_length, typ=FLAGS.start_patch).cuda(cuda_device_id)
   nps_gpu = NPSCalculator(FLAGS.printable_vals_filepath, FLAGS.patch_square_length).cuda(cuda_device_id)
   tv_gpu = TotalVariationCalculator().cuda(cuda_device_id)
-  patch_optimizer = torch.optim.Adam(patch_module_gpu.parameters(), lr=FLAGS.lr)
-  patch_lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(patch_optimizer, 'min', patience=FLAGS.plateau_patience)
 
-  ensemble_weights_gpu = torch.tensor([target_prior_weight[target] for target in target_settings],
-                                      dtype=torch.float, device=torch.device('cuda:%i'%cuda_device_id),
-                                      requires_grad=FLAGS.minimax)
-  prior_ensemble_weights_gpu = ensemble_weights_gpu.detach().clone()
-  norm_prior_ensemble_weights_gpu = F.softmax(prior_ensemble_weights_gpu, dim=0)
-
-  optimizer_class_init_func = {
-    "adam": lambda: torch.optim.Adam([ensemble_weights_gpu], lr=FLAGS.max_lr),
-    "sgd": lambda: torch.optim.SGD([ensemble_weights_gpu], lr=FLAGS.max_lr)
-  }
-  ensemble_weights_optimizer = optimizer_class_init_func[FLAGS.max_optim]() if FLAGS.minimax else None
-
+  patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer \
+      = allocate_memory_for_stateful_components(cuda_device_id, target_prior_weight)
+  norm_prior_ensemble_weights_gpu = ensemble_weights_module_gpu().detach().clone()
+  start_epoch = continue_from_checkpoint_if_exists_and_get_epoch(patch_module_gpu, patch_optimizer, patch_lr_scheduler,
+                                                                ensemble_weights_module_gpu, ensemble_weights_optimizer)
   if FLAGS.verbose: print("Session Initialized")
 
   # TRAINING
   target_extracted_confidences_gpu_dict = {}
-  for epoch in range(FLAGS.n_epochs):
+  for epoch in range(start_epoch, FLAGS.n_epochs):
     if FLAGS.verbose: print('  EPOCH NR: ', epoch)
     epoch_total_loss_sum = 0.0
     epoch_unweighted_detector_loss_sum = {detector_name:0.0 for detector_name in target_settings}
@@ -114,7 +103,7 @@ def train():
 
         if FLAGS.minimax:
           # MAX STEP
-          normalized_ensemble_weights_gpu = F.softmax(ensemble_weights_gpu, dim=0)
+          normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
           if FLAGS.verbose: print("Before Max Step, ", normalized_ensemble_weights_gpu)
           # prevent backpropagation through detectors during max step to save computation - only needed during min step
           detached_target_extracted_confidences_tensor = target_extracted_confidences_tensor.detach()
@@ -126,7 +115,7 @@ def train():
           max_loss.backward()
           ensemble_weights_optimizer.step()
           ensemble_weights_optimizer.zero_grad()
-          normalized_ensemble_weights_gpu = F.softmax(ensemble_weights_gpu, dim=0)
+          normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
           detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
           if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
         else:
@@ -173,7 +162,6 @@ def train():
                                           extracted_confidence_cpu_dict[target_name], batch_iteration)
             tensorboard_writer.add_scalar('batch/%s_ensemble_weight'%target_name,
                                           extracted_confidence_cpu_dict[target_name], batch_iteration)
-
     # EPOCH LOGGING & LR SCHEDULING
     epoch_total_loss_mean = epoch_total_loss_sum/iterations_per_epoch
     patch_lr_scheduler.step(epoch_total_loss_mean)
@@ -199,15 +187,80 @@ def train():
                                       epoch)
       tensorboard_writer.add_image('patch', adv_patch_cpu_tensor.numpy(), epoch) # tensorboard colors are buggy
     if FLAGS.verbose: print('EPOCH LOSS: %.3f\n'%epoch_total_loss_mean)
+    # INTERVAL METRIC REPORTING
+    if FLAGS.tune_tracking_interval != 0 and epoch % FLAGS.tune_tracking_interval == 0:
+      save_checkpoint(epoch, patch_module_gpu, patch_optimizer, patch_lr_scheduler,
+                      ensemble_weights_module_gpu, ensemble_weights_optimizer)
+      del patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer
+      torch.cuda.empty_cache()
+      metric = generate_statistics_and_scalar_metric()
+      torch.cuda.empty_cache()
+      track.log(worst_case_iou=metric, done=(epoch == (FLAGS.n_epochs - 1)), training_iteration=epoch)
+      patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer \
+          = allocate_memory_for_stateful_components(cuda_device_id, target_prior_weight)
+      _ = load_checkpoint_and_get_epoch(patch_module_gpu, patch_optimizer, patch_lr_scheduler,
+                                        ensemble_weights_module_gpu, ensemble_weights_optimizer)
 
 
-def worst_case_iou(detector_statistics, evaluated_detector_names):
+
+def get_checkpoint_filepath():
+  return os.path.join(FLAGS.logdir, 'checkpoint.pth.tar')
+
+
+def save_checkpoint(epoch:int, patch_module:torch.nn.Module, min_optimizer, min_scheduler,
+                    ensemble_weight_module:torch.nn.Module=None, max_optimizer=None):
+  state = {'epoch': epoch + 1, 'patch': patch_module.state_dict(), 'min_optimizer': min_optimizer.state_dict(),
+           'min_scheduler': min_scheduler.state_dict()}
+  if max_optimizer:
+    state['max_optimizer'] = max_optimizer.state_dict()
+    state['ensemble_weight'] = ensemble_weight_module.state_dict()
+  torch.save(state, get_checkpoint_filepath())
+
+
+def load_checkpoint_and_get_epoch(patch_module:torch.nn.Module, min_optimizer, min_scheduler,
+                                  ensemble_weight_module:torch.nn.Module=None, max_optimizer=None) -> int:
+  checkpoint = torch.load(get_checkpoint_filepath())
+  patch_module.load_state_dict(checkpoint['patch'])
+  min_optimizer.load_state_dict(checkpoint['min_optimizer'])
+  min_scheduler.load_state_dict(checkpoint['min_scheduler'])
+  if max_optimizer:
+    max_optimizer.load_state_dict(checkpoint['max_optimizer'])
+    ensemble_weight_module.load_state_dict(checkpoint['ensemble_weight'])
+  return checkpoint['epoch']
+
+
+def continue_from_checkpoint_if_exists_and_get_epoch(patch_module:torch.nn.Module, min_optimizer, scheduler,
+                                                     ensemble_weight_module:torch.nn.Module=None, max_optimizer=None):
+  if os.path.isfile(get_checkpoint_filepath()):
+    current_epoch = load_checkpoint_and_get_epoch(patch_module, min_optimizer, scheduler,
+                                                  ensemble_weight_module, max_optimizer)
+  else:
+    current_epoch = 0
+  return current_epoch
+
+
+def allocate_memory_for_stateful_components(cuda_device_id:int, target_prior_weight:dict):
+  patch_module_gpu = SquarePatch(patch_size=FLAGS.patch_square_length, typ=FLAGS.start_patch).cuda(cuda_device_id)
+  patch_optimizer = torch.optim.Adam(patch_module_gpu.parameters(), lr=FLAGS.lr)
+  patch_lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(patch_optimizer, 'min', patience=FLAGS.plateau_patience)
+
+  ensemble_weights_module_gpu = EnsembleWeights(target_prior_weight).cuda(cuda_device_id)
+  max_optimizer_class_init_func = {
+    "adam": lambda: torch.optim.Adam(ensemble_weights_module_gpu.parameters(), lr=FLAGS.max_lr),
+    "sgd": lambda: torch.optim.SGD(ensemble_weights_module_gpu.parameters(), lr=FLAGS.max_lr)
+  }
+  ensemble_weights_optimizer = max_optimizer_class_init_func[FLAGS.max_optim]() if FLAGS.minimax else None
+
+  return patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer
+
+
+def worst_case_iou(detector_statistics, evaluated_detector_names) -> float:
   selected_rows = detector_statistics['target'].apply(lambda el: el in evaluated_detector_names)
   subset = detector_statistics[selected_rows]
   return subset['patch_grand_iou'].max()
 
 
-def generate_statistics_and_scalar_metric():
+def generate_statistics_and_scalar_metric() -> float:
   detector_statistics = test_on_all_detectors(FLAGS.inria_test_dir, _patch_path())
   evaluated_detector_names = []
   flags_dict = FLAGS.flag_values_dict()
@@ -222,6 +275,7 @@ def generate_statistics_and_scalar_metric():
   textfile.write(f'{metric}\n')
   textfile.close()
   if FLAGS.verbose: print('Metric saved to %s\n' % metric_path)
+  return metric
 
 
 def _patch_path():
@@ -230,8 +284,9 @@ def _patch_path():
 
 def main(argv):
   train()
-  torch.cuda.empty_cache()
-  generate_statistics_and_scalar_metric()
+  if FLAGS.tune_tracking_interval is not 0:
+    torch.cuda.empty_cache()
+    _ = generate_statistics_and_scalar_metric()
 
 
 if __name__ == '__main__':

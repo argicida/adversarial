@@ -99,3 +99,5 @@ flags.DEFINE_boolean(name="tensorboard_epoch", default=True, help="whether to lo
                                                                   "potential to take up a lot of storage")
 flags.DEFINE_boolean(name="verbose", default=False, help="whether to print program status to stdout;"
                                                          "potential to take up a lot of storage")
+flags.DEFINE_integer(name="tune_tracking_interval", default=0, lower_bound=0,
+                     help="number of epochs for metric reporting intervals, disabled at 0")

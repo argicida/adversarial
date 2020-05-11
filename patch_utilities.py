@@ -154,7 +154,7 @@ class SquarePatchTransformer(torch.nn.Module):
     theta[:, 1, 2] = -tx * sin / scale + ty * cos / scale
 
     b_sh = adv_batch.shape
-    grid = F.affine_grid(theta, adv_batch.shape)
+    grid = F.affine_grid(theta, adv_batch.shape, align_corners=True)
 
     adv_batch_t = F.grid_sample(adv_batch, grid)
     msk_batch_t = F.grid_sample(msk_batch, grid)

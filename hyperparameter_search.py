@@ -1,20 +1,27 @@
 import os
+from datetime import datetime
 
 import ConfigSpace as CS
 
-import numpy as np
-import numpy as np
-
-import ray
 from ray import tune
 from ray.tune.schedulers.hb_bohb import HyperBandForBOHB
 from ray.tune.suggest.bohb import TuneBOHB
 
+from train_test_patch_one_gpu import train
 
-n_epochs = 50
+tracking_interval = 10
+n_epochs = tracking_interval*5
+standard_flags = f'--eval_yolov2=True --eval_ssd=True --eval_yolov3=True --n_epochs={n_epochs} --bs=8 ' \
+                 f'--inria_train_dir=../../inria/Train/pos --printable_vals_filepath=../../non_printability/30values.txt ' \
+                 f'--inria_test_dir=../../inria/Test/pos --logdir=logs --yolov2_cfg_file=../../cfg/yolov2.cfg ' \
+                 f'--yolov2_weight_file=../../weights/yolov2.weights --yolov3_cfg_file=../../implementations/yolov3/config/yolov3.cfg ' \
+                 f'--yolov3_weight_file=../../implementations/yolov3/weights/yolov3.weights ' \
+                 f'--ssd_weight_file=../../implementations/ssd/models/vgg16-ssd-mp-0_7726.pth ' \
+                 f'--example_patch_file=../../saved_patches/perry_08-26_500_epochs.jpg ' \
+                 f'--tensorboard_epoch=False'
 
 def train_one_gpu(config):
-    flags = f'python3 ../../train_test_patch_one_gpu.py --eval_yolov2=True --eval_ssd=True --eval_yolov3=True --n_epochs={n_epochs} --bs=8 --inria_train_dir=../../inria/Train/pos --printable_vals_filepath=../../non_printability/30values.txt --inria_test_dir=../../inria/Test/pos --logdir=logs --yolov2_cfg_file=../../cfg/yolov2.cfg --yolov2_weight_file=../../weights/yolov2.weights --yolov3_cfg_file=../../implementations/yolov3/config/yolov3.cfg --yolov3_weight_file=../../implementations/yolov3/weights/yolov3.weights --ssd_weight_file=../../implementations/ssd/models/vgg16-ssd-mp-0_7726.pth --example_patch_file=../../saved_patches/perry_08-26_500_epochs.jpg'
+    flags = f'python3 ../../train_test_patch_one_gpu.py {standard_flags}'
     for i in config:
       flags+=f' --{i}={str(config[i])}' 
     os.system(flags)
@@ -26,6 +33,25 @@ def train_one_gpu(config):
       tune.track.log(worst_case_iou=metric, done=True)
     else:
       print("Trial Failed!")
+
+
+def train_one_gpu_early_stopping(config):
+  from cli_config import FLAGS
+  FLAGS.unparse_flags()
+  flags = f'python3 ../../train_test_patch_one_gpu.py {standard_flags} --tune_tracking_interval={tracking_interval}'
+  for i in config:
+    flags += f' --{i}={str(config[i])}'
+  argv = flags.split()[1:]
+  FLAGS(argv)
+  train()
+  # if os.path.exists("logs/metric.txt"):
+    # textfile = open("logs/metric.txt", 'r')
+    # metric = float(textfile.readline())
+    # textfile.close()
+    # os.remove("logs/metric.txt")
+    # tune.track.log(worst_case_iou=metric, done=True)
+  # else:
+    # print("Trial Failed!")
     
     
 config_space = CS.ConfigurationSpace()
@@ -76,9 +102,10 @@ experiment_metrics = dict(metric="worst_case_iou", mode="min")
 bohb_hyperband = HyperBandForBOHB(time_attr="training_iteration",max_t=n_epochs,**experiment_metrics)
 bohb_search = TuneBOHB(config_space, **experiment_metrics)
 
-analysis = tune.run(train_one_gpu,
-    name="train_one_gpu_bohb_results",
+_init_time = datetime.now()
+analysis = tune.run(train_one_gpu_early_stopping,
+    name=f"logs_hp_optim_{_init_time.astimezone().tzinfo.tzname(None)+_init_time.strftime('%Y%m%d_%H_%M_%S_%f')}",
     scheduler=bohb_hyperband,
     search_alg=bohb_search,
-    num_samples=100, resources_per_trial={"gpu":1}, local_dir="~/argicida")
+    num_samples=10, resources_per_trial={"gpu":1}, local_dir="./")
 print("Best config: ", analysis.get_best_config(metric="worst_case_iou", mode="min"))
