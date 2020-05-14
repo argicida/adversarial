@@ -76,10 +76,12 @@ def train():
       batch_detection_loss_sum = 0.0
       batch_printability_loss_sum = 0.0
       batch_patch_variation_loss_sum = 0.0
-      images, normed_labels_dict = next(minibatch_iterator)
+      mini_batches = []
       if FLAGS.minimax:
         for nth_mini_batch in range(FLAGS.mini_bs):
           with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
+            images, normed_labels_dict = next(minibatch_iterator)
+            mini_batches.append([images,normed_labels_dict])
             adv_patch_gpu = patch_module_gpu()
             outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=normed_labels_dict,
                                                                         patch_2d=adv_patch_gpu)
@@ -136,6 +138,10 @@ def train():
             
       for nth_mini_batch in range(FLAGS.mini_bs):
         with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
+          if FLAGS.minimax:
+            images, normed_labels_dict = mini_batches[nth_mini_batch]
+          else:
+            images, normed_labels_dict = next(minibatch_iterator)
           adv_patch_gpu = patch_module_gpu()
           outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=normed_labels_dict,
                                                                       patch_2d=adv_patch_gpu)
