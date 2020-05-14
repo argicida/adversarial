@@ -76,8 +76,65 @@ def train():
       batch_detection_loss_sum = 0.0
       batch_printability_loss_sum = 0.0
       batch_patch_variation_loss_sum = 0.0
+      images, normed_labels_dict = next(minibatch_iterator)
+      if FLAGS.minimax:
+        for nth_mini_batch in range(FLAGS.mini_bs):
+          with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
+            adv_patch_gpu = patch_module_gpu()
+            outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=normed_labels_dict,
+                                                                        patch_2d=adv_patch_gpu)
+            for target_name in outputs_by_target:
+              setting = target_settings[target_name]
+              if setting is 1 or setting is 2:
+                # [batch_size, num_predictions] confidence
+                # [batch_size, num_predictions, 2] cx_cy
+                confidences, cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
+                # [1]
+                extracted_confidence = torch.mean(process(confidences, cx_cy, FLAGS.confidence_processor,
+                                                          normed_labels_on_device))
+              elif setting is 3:
+                object_coef = flags_dict['%s_object_weight'%target_name]
+                person_coef = 1 - object_coef
+                # [batch_size, num_predictions] confidence
+                # [batch_size, num_predictions, 2] cx_cy
+                person_confidences, person_cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
+                object_confidences, object_cx_cy, normed_labels_on_device = outputs_by_target[target_name][1]
+                # [batch_size]
+                extracted_person_confidences = process(person_confidences, person_cx_cy, FLAGS.confidence_processor,
+                                                       normed_labels_on_device)
+                extracted_object_confidences = process(object_confidences, object_cx_cy, FLAGS.confidence_processor,
+                                                       normed_labels_on_device)
+                # [1]
+                extracted_confidence = object_coef * torch.mean(extracted_object_confidences)\
+                                       + person_coef * torch.mean(extracted_person_confidences)
+              else:
+                assert False
+              target_extracted_confidences_gpu_dict[target_name] = extracted_confidence
+            # [num_target]
+            target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
+            if FLAGS.verbose: print("Dict Out", target_extracted_confidences_gpu_dict,
+                                    "Stacked Out, ", target_extracted_confidences_tensor)
+                                    
+            # MAX STEP
+            normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
+            if FLAGS.verbose: print("Before Max Step, ", normalized_ensemble_weights_gpu)
+            # prevent backpropagation through detectors during max step to save computation - only needed during min step
+            detached_target_extracted_confidences_tensor = target_extracted_confidences_tensor.detach()
+            # [1]
+            detection_loss_gpu = torch.matmul(normalized_ensemble_weights_gpu,
+                                              detached_target_extracted_confidences_tensor)
+            prior_l2_distance = torch.dist(normalized_ensemble_weights_gpu, norm_prior_ensemble_weights_gpu, p=2)
+            max_loss = (-detection_loss_gpu + FLAGS.minimax_gamma * prior_l2_distance) / n_mini_batches
+            max_loss.backward()
+            #batch_extracted_confidence += max_loss.detach().cpu().numpy()
+            normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
+            detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
+            if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
+          # MAX WEIGHT UPDATE
+          ensemble_weights_optimizer.step()
+          ensemble_weights_optimizer.zero_grad()
+            
       for nth_mini_batch in range(FLAGS.mini_bs):
-        images, normed_labels_dict = next(minibatch_iterator)
         with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
           adv_patch_gpu = patch_module_gpu()
           outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=normed_labels_dict,
@@ -117,18 +174,6 @@ def train():
                                   "Stacked Out, ", target_extracted_confidences_tensor)
   
           if FLAGS.minimax:
-            # MAX STEP
-            normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
-            if FLAGS.verbose: print("Before Max Step, ", normalized_ensemble_weights_gpu)
-            # prevent backpropagation through detectors during max step to save computation - only needed during min step
-            detached_target_extracted_confidences_tensor = target_extracted_confidences_tensor.detach()
-            # [1]
-            detection_loss_gpu = torch.matmul(normalized_ensemble_weights_gpu,
-                                              detached_target_extracted_confidences_tensor)
-            prior_l2_distance = torch.dist(normalized_ensemble_weights_gpu, norm_prior_ensemble_weights_gpu, p=2)
-            max_loss = (-detection_loss_gpu + FLAGS.minimax_gamma * prior_l2_distance) / n_mini_batches
-            max_loss.backward()
-            #batch_extracted_confidence += max_loss.detach().cpu().numpy()
             normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
             detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
             if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
@@ -150,10 +195,7 @@ def train():
           batch_printability_loss_sum += printability_loss_gpu.detach().cpu().numpy()
           batch_patch_variation_loss_sum += patch_variation_loss_gpu.detach().cpu().numpy()
           
-      # WEIGHT UPDATE
-      if FLAGS.minimax:
-        ensemble_weights_optimizer.step()
-        ensemble_weights_optimizer.zero_grad()
+      # MIN WEIGHT UPDATE
       patch_optimizer.step()
       patch_optimizer.zero_grad()
       
