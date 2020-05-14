@@ -1,17 +1,18 @@
 import torch
 import os
 import json
+import numpy as np
 from absl import app
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from ray.tune import track
+from tensorboardX import SummaryWriter
 
 from cli_config import FLAGS
 from inria import InriaDataset
 from detectors_manager import SUPPORTED_TRAIN_DETECTORS, Manager, EnsembleWeights
 from patch_utilities import SquarePatch, NPSCalculator, TotalVariationCalculator
 from detections_map_processors import check_detector_output_processor_exists, process
-from tensorboardX import SummaryWriter
 from test_patch import test_on_all_detectors, SUPPORTED_TEST_DETECTORS
 
 
@@ -54,7 +55,8 @@ def train():
                                                                 ensemble_weights_module_gpu, ensemble_weights_optimizer)
   if FLAGS.verbose: print("Session Initialized")
   
-  n_mini_bs = int(FLAGS.bs / FLAGS.mini_bs)
+  n_batches = int(len(train_loader)/FLAGS.bs)
+  n_mini_batches = int(FLAGS.bs/FLAGS.mini_bs)
 
   # TRAINING
   target_extracted_confidences_gpu_dict = {}
@@ -66,16 +68,16 @@ def train():
     epoch_weighted_detection_loss_sum = 0.0
     epoch_weighted_printability_loss_sum = 0.0
     epoch_weighted_patch_variation_loss_sum = 0.0
-    batch_load = iter(train_loader)
-    for nth_batch in range(n_mini_bs):
+    minibatch_iterator = iter(train_loader)
+    for nth_batch in range(n_batches):
       batch_extracted_confidence = {detector_name:0.0 for detector_name in target_settings}
-      batch_ensemble_weights_sum = {detector_name:0.0 for detector_name in target_settings}
+      batch_ensemble_weights_sum = np.zeros(shape=len(target_settings), dtype=np.float)
       batch_total_loss_sum = 0.0
       batch_detection_loss_sum = 0.0
       batch_printability_loss_sum = 0.0
       batch_patch_variation_loss_sum = 0.0
       for nth_mini_batch in range(FLAGS.mini_bs):
-        images, normed_labels_dict = batch_load.next()
+        images, normed_labels_dict = next(minibatch_iterator)
         with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
           adv_patch_gpu = patch_module_gpu()
           outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=normed_labels_dict,
@@ -108,7 +110,7 @@ def train():
               assert False
             target_extracted_confidences_gpu_dict[target_name] = extracted_confidence
             # ACCUMULATE BATCH STATISTIC
-            batch_extracted_confidence[target_name] += extracted_confidence / n_mini_bs
+            batch_extracted_confidence[target_name] += extracted_confidence / n_mini_batches
           # [num_target]
           target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
           if FLAGS.verbose: print("Dict Out", target_extracted_confidences_gpu_dict,
@@ -124,19 +126,19 @@ def train():
             detection_loss_gpu = torch.matmul(normalized_ensemble_weights_gpu,
                                               detached_target_extracted_confidences_tensor)
             prior_l2_distance = torch.dist(normalized_ensemble_weights_gpu, norm_prior_ensemble_weights_gpu, p=2)
-            max_loss = (-detection_loss_gpu + FLAGS.minimax_gamma * prior_l2_distance) / n_mini_bs
+            max_loss = (-detection_loss_gpu + FLAGS.minimax_gamma * prior_l2_distance) / n_mini_batches
             max_loss.backward()
             #batch_extracted_confidence += max_loss.detach().cpu().numpy()
             normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
             detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
-            batch_ensemble_weights_sum+= detached_norm_ensemble_weights_gpu.cpu().numpy() / n_mini_bs
             if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
           else:
             detached_norm_ensemble_weights_gpu = norm_prior_ensemble_weights_gpu
           # MIN STEP
-          detection_loss_gpu = (torch.matmul(detached_norm_ensemble_weights_gpu, target_extracted_confidences_tensor)) / n_mini_bs
-          printability_loss_gpu = (FLAGS.lambda_nps * nps_gpu(adv_patch_gpu)) / n_mini_bs
-          patch_variation_loss_gpu = (FLAGS.lambda_tv * tv_gpu(adv_patch_gpu)) / n_mini_bs
+          detection_loss_gpu = (torch.matmul(detached_norm_ensemble_weights_gpu, target_extracted_confidences_tensor))\
+                                   / n_mini_batches
+          printability_loss_gpu = (FLAGS.lambda_nps * nps_gpu(adv_patch_gpu)) / n_mini_batches
+          patch_variation_loss_gpu = (FLAGS.lambda_tv * tv_gpu(adv_patch_gpu)) / n_mini_batches
           total_loss_gpu = detection_loss_gpu + printability_loss_gpu + patch_variation_loss_gpu
           
           # GRADIENT UPDATE
@@ -172,11 +174,11 @@ def train():
         tensorboard_writer.add_scalar('batch/detection_loss', batch_detection_loss_sum, batch_iteration)
         tensorboard_writer.add_scalar('batch/printability_loss', batch_printability_loss_sum, batch_iteration)
         tensorboard_writer.add_scalar('batch/patch_variation_loss', batch_patch_variation_loss_sum, batch_iteration)
-        for target_name in target_extracted_confidences_gpu_dict:
+        for target_idx, target_name in enumerate(target_extracted_confidences_gpu_dict):
           tensorboard_writer.add_scalar('batch/%s_unweighted_loss'%target_name,
                                         batch_extracted_confidence[target_name], batch_iteration)
           tensorboard_writer.add_scalar('batch/%s_ensemble_weight'%target_name,
-                                        batch_ensemble_weights_sum[target_name], batch_iteration)
+                                        batch_ensemble_weights_sum[target_idx], batch_iteration)
       
       
     # EPOCH LOGGING & LR SCHEDULING
