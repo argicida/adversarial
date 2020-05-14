@@ -39,7 +39,7 @@ def train():
       target_devices[candidate] = cuda_device_id
   train_loader = DataLoader(InriaDataset(FLAGS.inria_train_dir, FLAGS.max_labs, FLAGS.init_size,
                                          list(target_settings.keys())),
-                            batch_size=FLAGS.bs, num_workers=FLAGS.num_workers, shuffle=True)
+                            batch_size=FLAGS.mini_bs, num_workers=FLAGS.num_workers, shuffle=True)
   iterations_per_epoch = len(train_loader)
   targets_manager = Manager(target_devices, target_settings, activate_logits=FLAGS.activate_logits,
                             debug_autograd=FLAGS.debug_autograd, debug_device=FLAGS.debug_device,
@@ -53,6 +53,8 @@ def train():
   start_epoch = continue_from_checkpoint_if_exists_and_get_epoch(patch_module_gpu, patch_optimizer, patch_lr_scheduler,
                                                                 ensemble_weights_module_gpu, ensemble_weights_optimizer)
   if FLAGS.verbose: print("Session Initialized")
+  
+  n_mini_bs = int(FLAGS.bs / FLAGS.mini_bs)
 
   # TRAINING
   target_extracted_confidences_gpu_dict = {}
@@ -64,104 +66,119 @@ def train():
     epoch_weighted_detection_loss_sum = 0.0
     epoch_weighted_printability_loss_sum = 0.0
     epoch_weighted_patch_variation_loss_sum = 0.0
-    for batch_index, (images, normed_labels_dict) in enumerate(train_loader):
-      with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
-        adv_patch_gpu = patch_module_gpu()
-        outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=normed_labels_dict,
-                                                                    patch_2d=adv_patch_gpu)
-        for target_name in outputs_by_target:
-          setting = target_settings[target_name]
-          if setting is 1 or setting is 2:
-            # [batch_size, num_predictions] confidence
-            # [batch_size, num_predictions, 2] cx_cy
-            confidences, cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
+    batch_load = iter(train_loader)
+    for nth_batch in range(n_mini_bs):
+      batch_extracted_confidence = {detector_name:0.0 for detector_name in target_settings}
+      batch_ensemble_weights_sum = {detector_name:0.0 for detector_name in target_settings}
+      batch_total_loss_sum = 0.0
+      batch_detection_loss_sum = 0.0
+      batch_printability_loss_sum = 0.0
+      batch_patch_variation_loss_sum = 0.0
+      for nth_mini_batch in range(FLAGS.mini_bs):
+        images, normed_labels_dict = batch_load.next()
+        with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
+          adv_patch_gpu = patch_module_gpu()
+          outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=normed_labels_dict,
+                                                                      patch_2d=adv_patch_gpu)
+          for target_name in outputs_by_target:
+            setting = target_settings[target_name]
+            if setting is 1 or setting is 2:
+              # [batch_size, num_predictions] confidence
+              # [batch_size, num_predictions, 2] cx_cy
+              confidences, cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
+              # [1]
+              extracted_confidence = torch.mean(process(confidences, cx_cy, FLAGS.confidence_processor,
+                                                        normed_labels_on_device))
+            elif setting is 3:
+              object_coef = flags_dict['%s_object_weight'%target_name]
+              person_coef = 1 - object_coef
+              # [batch_size, num_predictions] confidence
+              # [batch_size, num_predictions, 2] cx_cy
+              person_confidences, person_cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
+              object_confidences, object_cx_cy, normed_labels_on_device = outputs_by_target[target_name][1]
+              # [batch_size]
+              extracted_person_confidences = process(person_confidences, person_cx_cy, FLAGS.confidence_processor,
+                                                     normed_labels_on_device)
+              extracted_object_confidences = process(object_confidences, object_cx_cy, FLAGS.confidence_processor,
+                                                     normed_labels_on_device)
+              # [1]
+              extracted_confidence = object_coef * torch.mean(extracted_object_confidences)\
+                                     + person_coef * torch.mean(extracted_person_confidences)
+            else:
+              assert False
+            target_extracted_confidences_gpu_dict[target_name] = extracted_confidence
+            # ACCUMULATE BATCH STATISTIC
+            batch_extracted_confidence[target_name] += extracted_confidence / n_mini_bs
+          # [num_target]
+          target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
+          if FLAGS.verbose: print("Dict Out", target_extracted_confidences_gpu_dict,
+                                  "Stacked Out, ", target_extracted_confidences_tensor)
+  
+          if FLAGS.minimax:
+            # MAX STEP
+            normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
+            if FLAGS.verbose: print("Before Max Step, ", normalized_ensemble_weights_gpu)
+            # prevent backpropagation through detectors during max step to save computation - only needed during min step
+            detached_target_extracted_confidences_tensor = target_extracted_confidences_tensor.detach()
             # [1]
-            extracted_confidence = torch.mean(process(confidences, cx_cy, FLAGS.confidence_processor,
-                                                      normed_labels_on_device))
-          elif setting is 3:
-            object_coef = flags_dict['%s_object_weight'%target_name]
-            person_coef = 1 - object_coef
-            # [batch_size, num_predictions] confidence
-            # [batch_size, num_predictions, 2] cx_cy
-            person_confidences, person_cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
-            object_confidences, object_cx_cy, normed_labels_on_device = outputs_by_target[target_name][1]
-            # [batch_size]
-            extracted_person_confidences = process(person_confidences, person_cx_cy, FLAGS.confidence_processor,
-                                                   normed_labels_on_device)
-            extracted_object_confidences = process(object_confidences, object_cx_cy, FLAGS.confidence_processor,
-                                                   normed_labels_on_device)
-            # [1]
-            extracted_confidence = object_coef * torch.mean(extracted_object_confidences)\
-                                   + person_coef * torch.mean(extracted_person_confidences)
+            detection_loss_gpu = torch.matmul(normalized_ensemble_weights_gpu,
+                                              detached_target_extracted_confidences_tensor)
+            prior_l2_distance = torch.dist(normalized_ensemble_weights_gpu, norm_prior_ensemble_weights_gpu, p=2)
+            max_loss = (-detection_loss_gpu + FLAGS.minimax_gamma * prior_l2_distance) / n_mini_bs
+            max_loss.backward()
+            #batch_extracted_confidence += max_loss.detach().cpu().numpy()
+            normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
+            detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
+            batch_ensemble_weights_sum+= detached_norm_ensemble_weights_gpu.cpu().numpy() / n_mini_bs
+            if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
           else:
-            assert False
-          target_extracted_confidences_gpu_dict[target_name] = extracted_confidence
-        # [num_target]
-        target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
-        if FLAGS.verbose: print("Dict Out", target_extracted_confidences_gpu_dict,
-                                "Stacked Out, ", target_extracted_confidences_tensor)
-
-        if FLAGS.minimax:
-          # MAX STEP
-          normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
-          if FLAGS.verbose: print("Before Max Step, ", normalized_ensemble_weights_gpu)
-          # prevent backpropagation through detectors during max step to save computation - only needed during min step
-          detached_target_extracted_confidences_tensor = target_extracted_confidences_tensor.detach()
-          # [1]
-          detection_loss_gpu = torch.matmul(normalized_ensemble_weights_gpu,
-                                            detached_target_extracted_confidences_tensor)
-          prior_l2_distance = torch.dist(normalized_ensemble_weights_gpu, norm_prior_ensemble_weights_gpu, p=2)
-          max_loss = -detection_loss_gpu + FLAGS.minimax_gamma * prior_l2_distance
-          max_loss.backward()
-          ensemble_weights_optimizer.step()
-          ensemble_weights_optimizer.zero_grad()
-          normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
-          detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
-          if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
-        else:
-          detached_norm_ensemble_weights_gpu = norm_prior_ensemble_weights_gpu
-        # MIN STEP
-        detection_loss_gpu = torch.matmul(detached_norm_ensemble_weights_gpu, target_extracted_confidences_tensor)
-        printability_loss_gpu = FLAGS.lambda_nps * nps_gpu(adv_patch_gpu)
-        patch_variation_loss_gpu = FLAGS.lambda_tv * tv_gpu(adv_patch_gpu)
-        total_loss_gpu = detection_loss_gpu + printability_loss_gpu + patch_variation_loss_gpu
-
-        # GRADIENT UPDATE
-        total_loss_gpu.backward()
-        patch_optimizer.step()
-        patch_optimizer.zero_grad()
-
-        # BATCH LOGGING
-        total_loss_cpu = total_loss_gpu.detach().cpu().numpy()
-        # calculate statistics
-        if FLAGS.tensorboard_batch or FLAGS.tensorboard_epoch:
-          detection_loss_cpu = detection_loss_gpu.detach().cpu().numpy()
-          printability_loss_cpu = printability_loss_gpu.detach().cpu().numpy()
-          patch_variation_loss_cpu = patch_variation_loss_gpu.detach().cpu().numpy()
-          extracted_confidence_cpu_dict = {name:target_extracted_confidences_gpu_dict[name].detach().cpu().numpy()
-                                           for name in target_extracted_confidences_gpu_dict}
-          ensemble_weights_cpu_dict = {name:detached_norm_ensemble_weights_gpu[idx].detach().cpu().numpy()
-                                       for idx, name in enumerate(target_settings)}
-        if FLAGS.tensorboard_epoch:
-          epoch_total_loss_sum += total_loss_cpu
-          epoch_weighted_detection_loss_sum += detection_loss_cpu
-          epoch_weighted_printability_loss_sum += printability_loss_cpu
-          epoch_weighted_patch_variation_loss_sum += patch_variation_loss_cpu
-          for target_name in target_extracted_confidences_gpu_dict:
-            epoch_unweighted_detector_loss_sum[target_name] += extracted_confidence_cpu_dict[target_name]
-            epoch_ensemble_weights_sum[target_name] += ensemble_weights_cpu_dict[target_name]
-        # write to log
-        if FLAGS.tensorboard_batch:
-          batch_iteration = iterations_per_epoch * epoch + batch_index
-          tensorboard_writer.add_scalar('batch/total_loss', total_loss_cpu, batch_iteration)
-          tensorboard_writer.add_scalar('batch/detection_loss', detection_loss_cpu, batch_iteration)
-          tensorboard_writer.add_scalar('batch/printability_loss', printability_loss_cpu, batch_iteration)
-          tensorboard_writer.add_scalar('batch/patch_variation_loss', patch_variation_loss_cpu, batch_iteration)
-          for target_name in target_extracted_confidences_gpu_dict:
-            tensorboard_writer.add_scalar('batch/%s_unweighted_loss'%target_name,
-                                          extracted_confidence_cpu_dict[target_name], batch_iteration)
-            tensorboard_writer.add_scalar('batch/%s_ensemble_weight'%target_name,
-                                          extracted_confidence_cpu_dict[target_name], batch_iteration)
+            detached_norm_ensemble_weights_gpu = norm_prior_ensemble_weights_gpu
+          # MIN STEP
+          detection_loss_gpu = (torch.matmul(detached_norm_ensemble_weights_gpu, target_extracted_confidences_tensor)) / n_mini_bs
+          printability_loss_gpu = (FLAGS.lambda_nps * nps_gpu(adv_patch_gpu)) / n_mini_bs
+          patch_variation_loss_gpu = (FLAGS.lambda_tv * tv_gpu(adv_patch_gpu)) / n_mini_bs
+          total_loss_gpu = detection_loss_gpu + printability_loss_gpu + patch_variation_loss_gpu
+          
+          # GRADIENT UPDATE
+          total_loss_gpu.backward()
+          
+          # ACCUMULATE BATCH STATISTICS
+          batch_total_loss_sum += total_loss_gpu.detach().cpu().numpy()
+          batch_detection_loss_sum += detection_loss_gpu.detach().cpu().numpy()
+          batch_printability_loss_sum += printability_loss_gpu.detach().cpu().numpy()
+          batch_patch_variation_loss_sum += patch_variation_loss_gpu.detach().cpu().numpy()
+          
+      # WEIGHT UPDATE
+      if FLAGS.minimax:
+        ensemble_weights_optimizer.step()
+        ensemble_weights_optimizer.zero_grad()
+      patch_optimizer.step()
+      patch_optimizer.zero_grad()
+      
+      # BATCH LOGGING
+      if FLAGS.tensorboard_epoch:
+        epoch_total_loss_sum += batch_total_loss_sum
+        epoch_weighted_detection_loss_sum += batch_detection_loss_sum
+        epoch_weighted_printability_loss_sum += batch_printability_loss_sum
+        epoch_weighted_patch_variation_loss_sum += batch_patch_variation_loss_sum
+        for target_name in target_extracted_confidences_gpu_dict:
+          epoch_unweighted_detector_loss_sum[target_name] += batch_extracted_confidence[target_name]
+          epoch_ensemble_weights_sum[target_name] += batch_ensemble_weights_sum[target_name]
+          
+      # write to log
+      if FLAGS.tensorboard_batch:
+        batch_iteration = iterations_per_epoch * epoch + nth_batch
+        tensorboard_writer.add_scalar('batch/total_loss', batch_total_loss_sum, batch_iteration)
+        tensorboard_writer.add_scalar('batch/detection_loss', batch_detection_loss_sum, batch_iteration)
+        tensorboard_writer.add_scalar('batch/printability_loss', batch_printability_loss_sum, batch_iteration)
+        tensorboard_writer.add_scalar('batch/patch_variation_loss', batch_patch_variation_loss_sum, batch_iteration)
+        for target_name in target_extracted_confidences_gpu_dict:
+          tensorboard_writer.add_scalar('batch/%s_unweighted_loss'%target_name,
+                                        batch_extracted_confidence[target_name], batch_iteration)
+          tensorboard_writer.add_scalar('batch/%s_ensemble_weight'%target_name,
+                                        batch_ensemble_weights_sum[target_name], batch_iteration)
+      
+      
     # EPOCH LOGGING & LR SCHEDULING
     epoch_total_loss_mean = epoch_total_loss_sum/iterations_per_epoch
     patch_lr_scheduler.step(epoch_total_loss_mean)

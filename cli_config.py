@@ -14,6 +14,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_integer(name="n_epochs", default=100, lower_bound=0, help="number of epochs to iterate over training data")
 flags.DEFINE_float(name="lr", default=0.03, lower_bound=0, help="learning rate")
 flags.DEFINE_integer(name="bs", default=8, lower_bound=0, help="batch size")
+flags.DEFINE_integer(name="mini_bs", default=8, lower_bound=0, help="mini batch size")
 flags.DEFINE_integer(name="plateau_patience", default=8, lower_bound=0, help="max number of updates without decrease in "
                                                                              "loss or learning rate")
 flags.DEFINE_boolean(name="activate_logits", default=True, help="whether to use probabilities instead of logits when "
