@@ -71,15 +71,17 @@ def train():
     minibatch_iterator = iter(train_loader)
     for nth_batch in range(n_batches):
       batch_extracted_confidence = {detector_name:0.0 for detector_name in target_settings}
-      batch_ensemble_weights_sum = np.zeros(shape=len(target_settings), dtype=np.float)
+      batch_ensemble_weights = {detector_name:0.0 for detector_name in target_settings}
       batch_total_loss_sum = 0.0
       batch_detection_loss_sum = 0.0
       batch_printability_loss_sum = 0.0
       batch_patch_variation_loss_sum = 0.0
       mini_batches = []
-      if FLAGS.minimax:
-        for nth_mini_batch in range(FLAGS.mini_bs):
-          with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
+      with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
+        if FLAGS.minimax:
+          normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
+          if FLAGS.verbose: print("Before Max Step, ", normalized_ensemble_weights_gpu)
+          for nth_mini_batch in range(FLAGS.mini_bs):
             images, normed_labels_dict = next(minibatch_iterator)
             mini_batches.append([images,normed_labels_dict])
             adv_patch_gpu = patch_module_gpu()
@@ -116,10 +118,9 @@ def train():
             target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
             if FLAGS.verbose: print("Dict Out", target_extracted_confidences_gpu_dict,
                                     "Stacked Out, ", target_extracted_confidences_tensor)
-                                    
+
             # MAX STEP
             normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
-            if FLAGS.verbose: print("Before Max Step, ", normalized_ensemble_weights_gpu)
             # prevent backpropagation through detectors during max step to save computation - only needed during min step
             detached_target_extracted_confidences_tensor = target_extracted_confidences_tensor.detach()
             # [1]
@@ -128,16 +129,13 @@ def train():
             prior_l2_distance = torch.dist(normalized_ensemble_weights_gpu, norm_prior_ensemble_weights_gpu, p=2)
             max_loss = (-detection_loss_gpu + FLAGS.minimax_gamma * prior_l2_distance) / n_mini_batches
             max_loss.backward()
-            #batch_extracted_confidence += max_loss.detach().cpu().numpy()
-            normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
-            detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
-            if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
           # MAX WEIGHT UPDATE
           ensemble_weights_optimizer.step()
           ensemble_weights_optimizer.zero_grad()
-            
-      for nth_mini_batch in range(FLAGS.mini_bs):
-        with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
+          normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
+          if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
+        # MIN STEP
+        for nth_mini_batch in range(FLAGS.mini_bs):
           if FLAGS.minimax:
             images, normed_labels_dict = mini_batches[nth_mini_batch]
           else:
@@ -178,55 +176,55 @@ def train():
           target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
           if FLAGS.verbose: print("Dict Out", target_extracted_confidences_gpu_dict,
                                   "Stacked Out, ", target_extracted_confidences_tensor)
-  
+
           if FLAGS.minimax:
             normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
             detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
             if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
           else:
             detached_norm_ensemble_weights_gpu = norm_prior_ensemble_weights_gpu
-          # MIN STEP
           detection_loss_gpu = (torch.matmul(detached_norm_ensemble_weights_gpu, target_extracted_confidences_tensor))\
                                    / n_mini_batches
           printability_loss_gpu = (FLAGS.lambda_nps * nps_gpu(adv_patch_gpu)) / n_mini_batches
           patch_variation_loss_gpu = (FLAGS.lambda_tv * tv_gpu(adv_patch_gpu)) / n_mini_batches
           total_loss_gpu = detection_loss_gpu + printability_loss_gpu + patch_variation_loss_gpu
-          
+
           # GRADIENT UPDATE
           total_loss_gpu.backward()
-          
+
           # ACCUMULATE BATCH STATISTICS
+          batch_ensemble_weights = detached_norm_ensemble_weights_gpu.cpu().numpy()
           batch_total_loss_sum += total_loss_gpu.detach().cpu().numpy()
           batch_detection_loss_sum += detection_loss_gpu.detach().cpu().numpy()
           batch_printability_loss_sum += printability_loss_gpu.detach().cpu().numpy()
           batch_patch_variation_loss_sum += patch_variation_loss_gpu.detach().cpu().numpy()
-          
-      # MIN WEIGHT UPDATE
-      patch_optimizer.step()
-      patch_optimizer.zero_grad()
-      
-      # BATCH LOGGING
-      if FLAGS.tensorboard_epoch:
-        epoch_total_loss_sum += batch_total_loss_sum
-        epoch_weighted_detection_loss_sum += batch_detection_loss_sum
-        epoch_weighted_printability_loss_sum += batch_printability_loss_sum
-        epoch_weighted_patch_variation_loss_sum += batch_patch_variation_loss_sum
-        for target_name in target_extracted_confidences_gpu_dict:
-          epoch_unweighted_detector_loss_sum[target_name] += batch_extracted_confidence[target_name]
-          epoch_ensemble_weights_sum[target_name] += batch_ensemble_weights_sum[target_name]
-          
-      # write to log
-      if FLAGS.tensorboard_batch:
-        batch_iteration = iterations_per_epoch * epoch + nth_batch
-        tensorboard_writer.add_scalar('batch/total_loss', batch_total_loss_sum, batch_iteration)
-        tensorboard_writer.add_scalar('batch/detection_loss', batch_detection_loss_sum, batch_iteration)
-        tensorboard_writer.add_scalar('batch/printability_loss', batch_printability_loss_sum, batch_iteration)
-        tensorboard_writer.add_scalar('batch/patch_variation_loss', batch_patch_variation_loss_sum, batch_iteration)
-        for target_idx, target_name in enumerate(target_extracted_confidences_gpu_dict):
-          tensorboard_writer.add_scalar('batch/%s_unweighted_loss'%target_name,
-                                        batch_extracted_confidence[target_name], batch_iteration)
-          tensorboard_writer.add_scalar('batch/%s_ensemble_weight'%target_name,
-                                        batch_ensemble_weights_sum[target_idx], batch_iteration)
+
+        # MIN WEIGHT UPDATE
+        patch_optimizer.step()
+        patch_optimizer.zero_grad()
+
+        # BATCH LOGGING
+        if FLAGS.tensorboard_epoch:
+          epoch_total_loss_sum += batch_total_loss_sum
+          epoch_weighted_detection_loss_sum += batch_detection_loss_sum
+          epoch_weighted_printability_loss_sum += batch_printability_loss_sum
+          epoch_weighted_patch_variation_loss_sum += batch_patch_variation_loss_sum
+          for target_idx, target_name in enumerate(target_extracted_confidences_gpu_dict):
+            epoch_unweighted_detector_loss_sum[target_name] += batch_extracted_confidence[target_name]
+            epoch_ensemble_weights_sum[target_name] += batch_ensemble_weights[target_idx]
+
+        # write to log
+        if FLAGS.tensorboard_batch:
+          batch_iteration = iterations_per_epoch * epoch + nth_batch
+          tensorboard_writer.add_scalar('batch/total_loss', batch_total_loss_sum, batch_iteration)
+          tensorboard_writer.add_scalar('batch/detection_loss', batch_detection_loss_sum, batch_iteration)
+          tensorboard_writer.add_scalar('batch/printability_loss', batch_printability_loss_sum, batch_iteration)
+          tensorboard_writer.add_scalar('batch/patch_variation_loss', batch_patch_variation_loss_sum, batch_iteration)
+          for target_idx, target_name in enumerate(target_extracted_confidences_gpu_dict):
+            tensorboard_writer.add_scalar('batch/%s_unweighted_loss'%target_name,
+                                          batch_extracted_confidence[target_name], batch_iteration)
+            tensorboard_writer.add_scalar('batch/%s_ensemble_weight'%target_name,
+                                          batch_ensemble_weights[target_idx], batch_iteration)
       
       
     # EPOCH LOGGING & LR SCHEDULING
