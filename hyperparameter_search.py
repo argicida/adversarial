@@ -9,9 +9,11 @@ from ray.tune.suggest.bohb import TuneBOHB
 
 from train_test_patch_one_gpu import train
 
+mini_batch_size = 8
 tracking_interval = 10
 n_epochs = tracking_interval*5
-standard_flags = f'--eval_yolov2=True --eval_ssd=True --eval_yolov3=True --n_epochs={n_epochs} --bs=8 ' \
+standard_flags = f'--eval_yolov2=True --eval_ssd=True --eval_yolov3=True ' \
+                 f'--n_epochs={n_epochs} --mini_bs={mini_batch_size} ' \
                  f'--inria_train_dir=../../inria/Train/pos --printable_vals_filepath=../../non_printability/30values.txt ' \
                  f'--inria_test_dir=../../inria/Test/pos --logdir=logs --yolov2_cfg_file=../../cfg/yolov2.cfg ' \
                  f'--yolov2_weight_file=../../weights/yolov2.weights --yolov3_cfg_file=../../implementations/yolov3/config/yolov3.cfg ' \
@@ -56,7 +58,7 @@ def train_one_gpu_early_stopping(config):
     
 config_space = CS.ConfigurationSpace()
 config_space.add_hyperparameter(CS.UniformFloatHyperparameter("lr", lower=0.00001, upper=.1))
-#config_space.add_hyperparameter(CS.UniformIntegerHyperparameter("bs", lower=1, upper=24))
+config_space.add_hyperparameter(CS.UniformIntegerHyperparameter("num_mini", lower=1, upper=20))
 config_space.add_hyperparameter(CS.UniformIntegerHyperparameter("plateau_patience", lower=1, upper=n_epochs))
 config_space.add_hyperparameter(CS.CategoricalHyperparameter("activate_logits", choices=["True","False"]))
 config_space.add_hyperparameter(CS.CategoricalHyperparameter("confidence_processor", choices=["avg", "max", "det_max", "det_avg", "det_max_avg"]))

@@ -55,8 +55,9 @@ def train():
                                                                 ensemble_weights_module_gpu, ensemble_weights_optimizer)
   if FLAGS.verbose: print("Session Initialized")
   
-  n_batches = int(len(train_loader)/FLAGS.bs)
-  n_mini_batches = int(FLAGS.bs/FLAGS.mini_bs)
+  batch_size = FLAGS.mini_bs * FLAGS.num_mini
+  n_batches = int(len(train_loader) / batch_size)
+  n_mini_batches = FLAGS.num_mini
 
   # TRAINING
   target_extracted_confidences_gpu_dict = {}
