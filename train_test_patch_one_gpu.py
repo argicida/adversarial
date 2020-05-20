@@ -82,12 +82,12 @@ def train():
       mini_batches = []
       with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
         if FLAGS.minimax:
+          adv_patch_gpu = patch_module_gpu().detach().clone()
           normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
           if FLAGS.verbose: print("Before Max Step, ", normalized_ensemble_weights_gpu)
           for nth_mini_batch in range(FLAGS.mini_bs):
             images, normed_labels_dict = next(minibatch_iterator)
             mini_batches.append([images,normed_labels_dict])
-            adv_patch_gpu = patch_module_gpu()
             outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=normed_labels_dict,
                                                                         patch_2d=adv_patch_gpu)
             for target_name in outputs_by_target:
@@ -138,6 +138,12 @@ def train():
           normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
           if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
         # MIN STEP
+        if FLAGS.minimax:
+          normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
+          detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
+          if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
+        else:
+          detached_norm_ensemble_weights_gpu = norm_prior_ensemble_weights_gpu
         for nth_mini_batch in range(FLAGS.mini_bs):
           if FLAGS.minimax:
             images, normed_labels_dict = mini_batches[nth_mini_batch]
@@ -179,13 +185,6 @@ def train():
           target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
           if FLAGS.verbose: print("Dict Out", target_extracted_confidences_gpu_dict,
                                   "Stacked Out, ", target_extracted_confidences_tensor)
-
-          if FLAGS.minimax:
-            normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
-            detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
-            if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
-          else:
-            detached_norm_ensemble_weights_gpu = norm_prior_ensemble_weights_gpu
           detection_loss_gpu = (torch.matmul(detached_norm_ensemble_weights_gpu, target_extracted_confidences_tensor))\
                                    / n_mini_batches
           printability_loss_gpu = (FLAGS.lambda_nps * nps_gpu(adv_patch_gpu)) / n_mini_batches
