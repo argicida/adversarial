@@ -1,7 +1,7 @@
 import torch
 import os
 import json
-import numpy as np
+import math
 from absl import app
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -40,7 +40,8 @@ def train():
       target_devices[candidate] = cuda_device_id
   train_loader = DataLoader(InriaDataset(FLAGS.inria_train_dir, FLAGS.max_labs, FLAGS.init_size,
                                          list(target_settings.keys())),
-                            batch_size=FLAGS.mini_bs, num_workers=FLAGS.num_workers, shuffle=True)
+                            batch_size=FLAGS.mini_bs, num_workers=FLAGS.num_workers, shuffle=True,
+                            drop_last=False)
   iterations_per_epoch = len(train_loader)
   targets_manager = Manager(target_devices, target_settings, activate_logits=FLAGS.activate_logits,
                             debug_autograd=FLAGS.debug_autograd, debug_device=FLAGS.debug_device,
@@ -56,7 +57,7 @@ def train():
   if FLAGS.verbose: print("Session Initialized")
   
   batch_size = FLAGS.mini_bs * FLAGS.num_mini
-  n_batches = int(len(train_loader) / batch_size)
+  n_batches = math.ceil(len(train_loader) / batch_size)
   n_mini_batches = FLAGS.num_mini
 
   # TRAINING
@@ -71,6 +72,7 @@ def train():
     epoch_weighted_patch_variation_loss_sum = 0.0
     minibatch_iterator = iter(train_loader)
     for nth_batch in range(n_batches):
+      if FLAGS.verbose: print('  BATCH NR: ', nth_batch)
       batch_extracted_confidence = {detector_name:0.0 for detector_name in target_settings}
       batch_ensemble_weights = {detector_name:0.0 for detector_name in target_settings}
       batch_total_loss_sum = 0.0
