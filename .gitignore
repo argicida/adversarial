@@ -7,6 +7,9 @@ blackbox.out
 
 # slurm scripts
 slurm*.sh
+hyperparameter_search.sh
+hyperparameter_search.err
+hyperparameter_search.out
 
 # videos
 test_videos/*
