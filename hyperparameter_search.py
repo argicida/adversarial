@@ -11,7 +11,7 @@ from train_test_patch_one_gpu import train
 
 mini_batch_size = 8
 tracking_interval = 10
-n_epochs = tracking_interval*5
+n_epochs = tracking_interval*5 + 1
 standard_flags = f'--eval_yolov2=True --eval_ssd=True --eval_yolov3=True ' \
                  f'--n_epochs={n_epochs} --mini_bs={mini_batch_size} ' \
                  f'--inria_train_dir=../../inria/Train/pos --printable_vals_filepath=../../non_printability/30values.txt ' \

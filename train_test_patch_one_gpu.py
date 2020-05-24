@@ -92,6 +92,11 @@ def train():
   n_batches = math.ceil(len(train_loader) / batch_size)
   n_mini_batches = FLAGS.num_mini
 
+  # print("allocated")
+  # print(torch.cuda.memory_stats()['allocated_bytes.all.allocated'] / (1024 ** 3))
+  # print("freed")
+  # print(torch.cuda.memory_stats()['allocated_bytes.all.freed'] / (1024 ** 3))
+  # print("BEGINNING")
   # TRAINING
   for epoch in range(start_epoch, FLAGS.n_epochs):
     if FLAGS.verbose: print('  EPOCH NR: ', epoch)
@@ -140,11 +145,18 @@ def train():
             max_loss = (-detection_loss_gpu + FLAGS.minimax_gamma * prior_l2_distance) / n_mini_batches
             max_loss.backward()
             del max_loss, prior_l2_distance, detection_loss_gpu, detached_target_extracted_confidences_tensor, \
-              normalized_ensemble_weights_gpu, target_extracted_confidences_gpu_dict, outputs_by_target
-            torch.cuda.empty_cache()
+                normalized_ensemble_weights_gpu, target_extracted_confidences_gpu_dict, outputs_by_target, \
+                target_extracted_confidences_tensor
+            # torch.cuda.empty_cache()
+            # print(torch.cuda.memory_stats()['allocated_bytes.all.current'] / (1024**3))
           # MAX WEIGHT UPDATE
           ensemble_weights_optimizer.step()
           ensemble_weights_optimizer.zero_grad()
+          # torch.cuda.empty_cache()
+          # print("allocated")
+          # print(torch.cuda.memory_stats()['allocated_bytes.all.allocated'] / (1024**3))
+          # print("freed")
+          # print(torch.cuda.memory_stats()['allocated_bytes.all.freed'] / (1024**3))
           if FLAGS.verbose: print("After Max Step, ", ensemble_weights_module_gpu())
         # MIN STEP
         if FLAGS.minimax:
@@ -154,7 +166,8 @@ def train():
           detached_norm_ensemble_weights_gpu = norm_prior_ensemble_weights_gpu
         for nth_mini_batch in range(FLAGS.mini_bs):
           if FLAGS.minimax:
-            images, normed_labels_dict = mini_batches[nth_mini_batch]
+            #images, normed_labels_dict = mini_batches[nth_mini_batch]
+            images, normed_labels_dict = next(minibatch_iterator)
           else:
             images, normed_labels_dict = next(minibatch_iterator)
           adv_patch_gpu = patch_module_gpu()
@@ -177,6 +190,8 @@ def train():
 
           # GRADIENT UPDATE
           total_loss_gpu.backward()
+          # torch.cuda.empty_cache()
+          # print(torch.cuda.memory_stats()['allocated_bytes.all.current'] / (1024**3))
 
           # ACCUMULATE BATCH STATISTICS
           batch_ensemble_weights = detached_norm_ensemble_weights_gpu.cpu().numpy()
@@ -188,6 +203,12 @@ def train():
         # MIN WEIGHT UPDATE
         patch_optimizer.step()
         patch_optimizer.zero_grad()
+
+        # torch.cuda.empty_cache()
+        # print("allocated")
+        # print(torch.cuda.memory_stats()['allocated_bytes.all.allocated'] / (1024**3))
+        # print("freed")
+        # print(torch.cuda.memory_stats()['allocated_bytes.all.freed'] / (1024**3))
 
         # BATCH LOGGING
         if FLAGS.tensorboard_epoch:
@@ -239,14 +260,14 @@ def train():
       tensorboard_writer.add_image('patch', adv_patch_cpu_tensor.numpy(), epoch) # tensorboard colors are buggy
     if FLAGS.verbose: print('EPOCH LOSS: %.3f\n'%epoch_total_loss_mean)
     # INTERVAL METRIC REPORTING
-    if FLAGS.tune_tracking_interval != 0 and epoch % FLAGS.tune_tracking_interval == 0:
+    if FLAGS.tune_tracking_interval != 0 and (epoch+1) % FLAGS.tune_tracking_interval == 0:
       save_checkpoint(epoch, patch_module_gpu, patch_optimizer, patch_lr_scheduler,
                       ensemble_weights_module_gpu, ensemble_weights_optimizer)
       del patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer
       torch.cuda.empty_cache()
       metric = generate_statistics_and_scalar_metric()
       torch.cuda.empty_cache()
-      track.log(worst_case_iou=metric, done=(epoch == (FLAGS.n_epochs - 1)), training_iteration=epoch)
+      track.log(worst_case_iou=metric, done=((epoch + 1) == FLAGS.n_epochs), training_iteration=epoch)
       patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer \
           = allocate_memory_for_stateful_components(cuda_device_id, target_prior_weight)
       _ = load_checkpoint_and_get_epoch(patch_module_gpu, patch_optimizer, patch_lr_scheduler,
