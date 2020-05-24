@@ -176,8 +176,8 @@ def train():
           target_extracted_confidences_gpu_dict = manager_output_into_target_loss_gpu_dict(flags_dict, target_settings,
                                                                                            outputs_by_target)
           for target_name in target_settings:
-            detached_target_confidence_cpu = target_extracted_confidences_gpu_dict[target_name].detach().cpu().numpy()
-            batch_extracted_confidence[target_name] += detached_target_confidence_cpu / n_mini_batches
+            batch_extracted_confidence[target_name] += target_extracted_confidences_gpu_dict[target_name]\
+                                                          .detach().cpu().numpy() / n_mini_batches
           # [num_target]
           target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
           if FLAGS.verbose: print("Dict Out", target_extracted_confidences_gpu_dict,
@@ -200,6 +200,10 @@ def train():
           batch_printability_loss_sum += printability_loss_gpu.detach().cpu().numpy()
           batch_patch_variation_loss_sum += patch_variation_loss_gpu.detach().cpu().numpy()
 
+          del total_loss_gpu, patch_variation_loss_gpu, printability_loss_gpu, detection_loss_gpu,\
+              target_extracted_confidences_tensor, target_extracted_confidences_gpu_dict, outputs_by_target,\
+              adv_patch_gpu
+
         # MIN WEIGHT UPDATE
         patch_optimizer.step()
         patch_optimizer.zero_grad()
@@ -216,7 +220,7 @@ def train():
           epoch_weighted_detection_loss_sum += batch_detection_loss_sum
           epoch_weighted_printability_loss_sum += batch_printability_loss_sum
           epoch_weighted_patch_variation_loss_sum += batch_patch_variation_loss_sum
-          for target_idx, target_name in enumerate(target_extracted_confidences_gpu_dict):
+          for target_idx, target_name in enumerate(batch_extracted_confidence):
             epoch_unweighted_detector_loss_sum[target_name] += batch_extracted_confidence[target_name]
             epoch_ensemble_weights_sum[target_name] += batch_ensemble_weights[target_idx]
 
