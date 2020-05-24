@@ -16,6 +16,38 @@ from detections_map_processors import check_detector_output_processor_exists, pr
 from test_patch import test_on_all_detectors, SUPPORTED_TEST_DETECTORS
 
 
+def manager_output_into_target_loss_gpu_dict(flags_dict:dict, target_settings:dict, outputs_by_target:dict) -> dict:
+  target_extracted_confidences_gpu_dict = {}
+  for target_name in outputs_by_target:
+    setting = target_settings[target_name]
+    if setting is 1 or setting is 2:
+      # [batch_size, num_predictions] confidence
+      # [batch_size, num_predictions, 2] cx_cy
+      confidences, cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
+      # [1]
+      extracted_confidence = torch.mean(process(confidences, cx_cy, FLAGS.confidence_processor,
+                                                normed_labels_on_device))
+    elif setting is 3:
+      object_coef = flags_dict['%s_object_weight' % target_name]
+      person_coef = 1 - object_coef
+      # [batch_size, num_predictions] confidence
+      # [batch_size, num_predictions, 2] cx_cy
+      person_confidences, person_cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
+      object_confidences, object_cx_cy, normed_labels_on_device = outputs_by_target[target_name][1]
+      # [batch_size]
+      extracted_person_confidences = process(person_confidences, person_cx_cy, FLAGS.confidence_processor,
+                                             normed_labels_on_device)
+      extracted_object_confidences = process(object_confidences, object_cx_cy, FLAGS.confidence_processor,
+                                             normed_labels_on_device)
+      # [1]
+      extracted_confidence = object_coef * torch.mean(extracted_object_confidences) \
+                             + person_coef * torch.mean(extracted_person_confidences)
+    else:
+      assert False
+    target_extracted_confidences_gpu_dict[target_name] = extracted_confidence
+  return target_extracted_confidences_gpu_dict
+
+
 def train():
   # INITIALIZATION
   if FLAGS.verbose: print("Initializing")
@@ -61,7 +93,6 @@ def train():
   n_mini_batches = FLAGS.num_mini
 
   # TRAINING
-  target_extracted_confidences_gpu_dict = {}
   for epoch in range(start_epoch, FLAGS.n_epochs):
     if FLAGS.verbose: print('  EPOCH NR: ', epoch)
     epoch_total_loss_sum = 0.0
@@ -81,42 +112,18 @@ def train():
       batch_patch_variation_loss_sum = 0.0
       mini_batches = []
       with torch.autograd.set_detect_anomaly(FLAGS.debug_autograd):
+        # MAX STEP
         if FLAGS.minimax:
-          adv_patch_gpu = patch_module_gpu().detach().clone()
-          normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
-          if FLAGS.verbose: print("Before Max Step, ", normalized_ensemble_weights_gpu)
+          adv_patch_gpu = patch_module_gpu().detach()
+          if FLAGS.verbose: print("Before Max Step, ", ensemble_weights_module_gpu())
           for nth_mini_batch in range(FLAGS.mini_bs):
             images, normed_labels_dict = next(minibatch_iterator)
-            mini_batches.append([images,normed_labels_dict])
+            detached_labels = {detector_name:normed_labels_dict[detector_name].detach() for detector_name in normed_labels_dict}
+            mini_batches.append([images.detach(), detached_labels])
             outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=normed_labels_dict,
                                                                         patch_2d=adv_patch_gpu)
-            for target_name in outputs_by_target:
-              setting = target_settings[target_name]
-              if setting is 1 or setting is 2:
-                # [batch_size, num_predictions] confidence
-                # [batch_size, num_predictions, 2] cx_cy
-                confidences, cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
-                # [1]
-                extracted_confidence = torch.mean(process(confidences, cx_cy, FLAGS.confidence_processor,
-                                                          normed_labels_on_device))
-              elif setting is 3:
-                object_coef = flags_dict['%s_object_weight'%target_name]
-                person_coef = 1 - object_coef
-                # [batch_size, num_predictions] confidence
-                # [batch_size, num_predictions, 2] cx_cy
-                person_confidences, person_cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
-                object_confidences, object_cx_cy, normed_labels_on_device = outputs_by_target[target_name][1]
-                # [batch_size]
-                extracted_person_confidences = process(person_confidences, person_cx_cy, FLAGS.confidence_processor,
-                                                       normed_labels_on_device)
-                extracted_object_confidences = process(object_confidences, object_cx_cy, FLAGS.confidence_processor,
-                                                       normed_labels_on_device)
-                # [1]
-                extracted_confidence = object_coef * torch.mean(extracted_object_confidences)\
-                                       + person_coef * torch.mean(extracted_person_confidences)
-              else:
-                assert False
-              target_extracted_confidences_gpu_dict[target_name] = extracted_confidence
+            target_extracted_confidences_gpu_dict = manager_output_into_target_loss_gpu_dict(flags_dict, target_settings,
+                                                                                             outputs_by_target)
             # [num_target]
             target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
             if FLAGS.verbose: print("Dict Out", target_extracted_confidences_gpu_dict,
@@ -132,16 +139,17 @@ def train():
             prior_l2_distance = torch.dist(normalized_ensemble_weights_gpu, norm_prior_ensemble_weights_gpu, p=2)
             max_loss = (-detection_loss_gpu + FLAGS.minimax_gamma * prior_l2_distance) / n_mini_batches
             max_loss.backward()
+            del max_loss, prior_l2_distance, detection_loss_gpu, detached_target_extracted_confidences_tensor, \
+              normalized_ensemble_weights_gpu, target_extracted_confidences_gpu_dict, outputs_by_target
+            torch.cuda.empty_cache()
           # MAX WEIGHT UPDATE
           ensemble_weights_optimizer.step()
           ensemble_weights_optimizer.zero_grad()
-          normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
-          if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
+          if FLAGS.verbose: print("After Max Step, ", ensemble_weights_module_gpu())
         # MIN STEP
         if FLAGS.minimax:
           normalized_ensemble_weights_gpu = ensemble_weights_module_gpu()
           detached_norm_ensemble_weights_gpu = normalized_ensemble_weights_gpu.detach()
-          if FLAGS.verbose: print("After Max Step, ", normalized_ensemble_weights_gpu)
         else:
           detached_norm_ensemble_weights_gpu = norm_prior_ensemble_weights_gpu
         for nth_mini_batch in range(FLAGS.mini_bs):
@@ -152,35 +160,11 @@ def train():
           adv_patch_gpu = patch_module_gpu()
           outputs_by_target = targets_manager.train_forward_propagate(images, labels_by_target=normed_labels_dict,
                                                                       patch_2d=adv_patch_gpu)
-          for target_name in outputs_by_target:
-            setting = target_settings[target_name]
-            if setting is 1 or setting is 2:
-              # [batch_size, num_predictions] confidence
-              # [batch_size, num_predictions, 2] cx_cy
-              confidences, cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
-              # [1]
-              extracted_confidence = torch.mean(process(confidences, cx_cy, FLAGS.confidence_processor,
-                                                        normed_labels_on_device))
-            elif setting is 3:
-              object_coef = flags_dict['%s_object_weight'%target_name]
-              person_coef = 1 - object_coef
-              # [batch_size, num_predictions] confidence
-              # [batch_size, num_predictions, 2] cx_cy
-              person_confidences, person_cx_cy, normed_labels_on_device = outputs_by_target[target_name][0]
-              object_confidences, object_cx_cy, normed_labels_on_device = outputs_by_target[target_name][1]
-              # [batch_size]
-              extracted_person_confidences = process(person_confidences, person_cx_cy, FLAGS.confidence_processor,
-                                                     normed_labels_on_device)
-              extracted_object_confidences = process(object_confidences, object_cx_cy, FLAGS.confidence_processor,
-                                                     normed_labels_on_device)
-              # [1]
-              extracted_confidence = object_coef * torch.mean(extracted_object_confidences)\
-                                     + person_coef * torch.mean(extracted_person_confidences)
-            else:
-              assert False
-            target_extracted_confidences_gpu_dict[target_name] = extracted_confidence
-            # ACCUMULATE BATCH STATISTIC
-            batch_extracted_confidence[target_name] += extracted_confidence / n_mini_batches
+          target_extracted_confidences_gpu_dict = manager_output_into_target_loss_gpu_dict(flags_dict, target_settings,
+                                                                                           outputs_by_target)
+          for target_name in target_settings:
+            detached_target_confidence_cpu = target_extracted_confidences_gpu_dict[target_name].detach().cpu().numpy()
+            batch_extracted_confidence[target_name] += detached_target_confidence_cpu / n_mini_batches
           # [num_target]
           target_extracted_confidences_tensor = torch.stack(list(target_extracted_confidences_gpu_dict.values()))
           if FLAGS.verbose: print("Dict Out", target_extracted_confidences_gpu_dict,
