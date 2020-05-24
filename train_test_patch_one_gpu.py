@@ -201,8 +201,7 @@ def train():
           batch_patch_variation_loss_sum += patch_variation_loss_gpu.detach().cpu().numpy()
 
           del total_loss_gpu, patch_variation_loss_gpu, printability_loss_gpu, detection_loss_gpu,\
-              target_extracted_confidences_tensor, target_extracted_confidences_gpu_dict, outputs_by_target,\
-              adv_patch_gpu
+              target_extracted_confidences_tensor, target_extracted_confidences_gpu_dict, outputs_by_target
 
         # MIN WEIGHT UPDATE
         patch_optimizer.step()

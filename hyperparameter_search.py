@@ -1,4 +1,5 @@
 import os
+import argparse
 from datetime import datetime
 
 import ConfigSpace as CS
@@ -9,9 +10,19 @@ from ray.tune.suggest.bohb import TuneBOHB
 
 from train_test_patch_one_gpu import train
 
-mini_batch_size = 8
-tracking_interval = 10
-n_epochs = tracking_interval*5 + 1
+parser = argparse.ArgumentParser()
+parser.add_argument("--mbs", type=int, default=8, help="minibatch size")
+parser.add_argument("--ti", type=int, default=10, help="number of epochs in a tracking interval, "
+                                                       "0 to disable interval tracking")
+parser.add_argument("--ni", type=int, default=5, help="number of tracking intervals in a session")
+parser.add_argument("--ne", type=int, default=51, help="number of epochs in a session, "
+                                                       "for when interval tracking is disabled")
+
+args = parser.parse_args()
+mini_batch_size = args.mbs
+tracking_interval = args.ti
+n_epochs = tracking_interval*args.ni + 1 if args.ti != 0 else args.ne
+
 standard_flags = f'--eval_yolov2=True --eval_ssd=True --eval_yolov3=True ' \
                  f'--n_epochs={n_epochs} --mini_bs={mini_batch_size} ' \
                  f'--inria_train_dir=../../inria/Train/pos --printable_vals_filepath=../../non_printability/30values.txt ' \
@@ -22,10 +33,11 @@ standard_flags = f'--eval_yolov2=True --eval_ssd=True --eval_yolov3=True ' \
                  f'--example_patch_file=../../saved_patches/perry_08-26_500_epochs.jpg ' \
                  f'--tensorboard_epoch=False'
 
+
 def train_one_gpu(config):
     flags = f'python3 ../../train_test_patch_one_gpu.py {standard_flags}'
     for i in config:
-      flags+=f' --{i}={str(config[i])}' 
+      flags+=f' --{i}={str(config[i])}'
     os.system(flags)
     if os.path.exists("logs/metric.txt"):
       textfile = open("logs/metric.txt", 'r')
@@ -46,14 +58,15 @@ def train_one_gpu_early_stopping(config):
   argv = flags.split()[1:]
   FLAGS(argv)
   train()
-  # if os.path.exists("logs/metric.txt"):
-    # textfile = open("logs/metric.txt", 'r')
-    # metric = float(textfile.readline())
-    # textfile.close()
-    # os.remove("logs/metric.txt")
-    # tune.track.log(worst_case_iou=metric, done=True)
-  # else:
-    # print("Trial Failed!")
+  if tracking_interval is 0:
+    if os.path.exists("logs/metric.txt"):
+      textfile = open("logs/metric.txt", 'r')
+      metric = float(textfile.readline())
+      textfile.close()
+      os.remove("logs/metric.txt")
+      tune.track.log(worst_case_iou=metric, done=True)
+    else:
+      raise Exception("trial failed")
     
     
 config_space = CS.ConfigurationSpace()
