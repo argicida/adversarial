@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 from datetime import datetime
 
@@ -11,17 +12,24 @@ from ray.tune.suggest.bohb import TuneBOHB
 from train_test_patch_one_gpu import train
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--nt", type=int, default=20, help="number of trials")
 parser.add_argument("--mbs", type=int, default=8, help="minibatch size")
 parser.add_argument("--ti", type=int, default=10, help="number of epochs in a tracking interval, "
                                                        "0 to disable interval tracking")
 parser.add_argument("--ni", type=int, default=5, help="number of tracking intervals in a session")
 parser.add_argument("--ne", type=int, default=51, help="number of epochs in a session, "
                                                        "for when interval tracking is disabled")
+parser.add_argument("--rs", type=bool, default=True, help="whether to redirect stdout to logfile")
 
 args = parser.parse_args()
 mini_batch_size = args.mbs
 tracking_interval = args.ti
 n_epochs = tracking_interval*args.ni + 1 if args.ti != 0 else args.ne
+
+_init_time = datetime.now()
+logdir = f"logs_hpo_{_init_time.astimezone().tzinfo.tzname(None)+_init_time.strftime('%Y%m%d_%H_%M_%S_%f')}"
+if args.rs:
+  sys.stdout = open(os.path.join(logdir, "log.txt"), "w")
 
 standard_flags = f'--eval_yolov2=True --eval_ssd=True --eval_yolov3=True ' \
                  f'--n_epochs={n_epochs} --mini_bs={mini_batch_size} ' \
@@ -117,10 +125,12 @@ experiment_metrics = dict(metric="worst_case_iou", mode="min")
 bohb_hyperband = HyperBandForBOHB(time_attr="training_iteration",max_t=n_epochs,**experiment_metrics)
 bohb_search = TuneBOHB(config_space, **experiment_metrics)
 
-_init_time = datetime.now()
 analysis = tune.run(train_one_gpu_early_stopping,
-    name=f"logs_hp_optim_{_init_time.astimezone().tzinfo.tzname(None)+_init_time.strftime('%Y%m%d_%H_%M_%S_%f')}",
+    name=logdir,
     scheduler=bohb_hyperband,
     search_alg=bohb_search,
-    num_samples=10, resources_per_trial={"gpu":1}, local_dir="./")
+    num_samples=args.nt, resources_per_trial={"gpu":1}, local_dir="./")
 print("Best config: ", analysis.get_best_config(metric="worst_case_iou", mode="min"))
+# saves relevant summary data to file under logdir
+df = analysis.dataframe()
+df.to_csv(os.path.join(logdir, "data.csv"))
