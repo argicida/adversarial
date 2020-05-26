@@ -17,14 +17,14 @@ parser.add_argument("--mbs", type=int, default=8, help="minibatch size")
 parser.add_argument("--ti", type=int, default=10, help="number of epochs in a tracking interval, "
                                                        "0 to disable interval tracking")
 parser.add_argument("--ni", type=int, default=5, help="number of tracking intervals in a session")
-parser.add_argument("--ne", type=int, default=51, help="number of epochs in a session, "
+parser.add_argument("--ne", type=int, default=50, help="number of epochs in a session, "
                                                        "for when interval tracking is disabled")
 parser.add_argument("--rs", type=bool, default=True, help="whether to redirect stdout to logfile")
 
 args = parser.parse_args()
 mini_batch_size = args.mbs
 tracking_interval = args.ti
-n_epochs = tracking_interval*args.ni + 1 if args.ti != 0 else args.ne
+n_epochs = tracking_interval*args.ni if args.ti != 0 else args.ne
 
 _init_time = datetime.now()
 logdir = f"logs_hpo_{_init_time.astimezone().tzinfo.tzname(None)+_init_time.strftime('%Y%m%d_%H_%M_%S_%f')}"

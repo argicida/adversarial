@@ -263,7 +263,7 @@ def train():
       tensorboard_writer.add_image('patch', adv_patch_cpu_tensor.numpy(), epoch) # tensorboard colors are buggy
     if FLAGS.verbose: print('EPOCH LOSS: %.3f\n'%epoch_total_loss_mean)
     # INTERVAL METRIC REPORTING
-    if FLAGS.tune_tracking_interval != 0 and (epoch+1) % FLAGS.tune_tracking_interval == 0:
+    if FLAGS.tune_tracking_interval != 0 and ((epoch+1) % FLAGS.tune_tracking_interval == 0):
       save_checkpoint(epoch, patch_module_gpu, patch_optimizer, patch_lr_scheduler,
                       ensemble_weights_module_gpu, ensemble_weights_optimizer)
       del patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer
