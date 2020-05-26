@@ -29,7 +29,7 @@ n_epochs = tracking_interval*args.ni + 1 if args.ti != 0 else args.ne
 _init_time = datetime.now()
 logdir = f"logs_hpo_{_init_time.astimezone().tzinfo.tzname(None)+_init_time.strftime('%Y%m%d_%H_%M_%S_%f')}"
 if args.rs:
-  sys.stdout = open(os.path.join(logdir, "log.txt"), "w")
+  sys.stdout = open(os.path.join(logdir, "stdout.txt"), "w+")
 
 standard_flags = f'--eval_yolov2=True --eval_ssd=True --eval_yolov3=True ' \
                  f'--n_epochs={n_epochs} --mini_bs={mini_batch_size} ' \
