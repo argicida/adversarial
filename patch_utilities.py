@@ -11,10 +11,10 @@ class SquarePatch(torch.nn.Module):
     super(SquarePatch, self).__init__()
     if typ == 'grey':
       # when params are 0. the rgbs are 0.5
-      self.params = torch.nn.Parameter(data=torch.full((3, patch_size, patch_size), 0))
+      self.params = torch.nn.Parameter(data=torch.full((3, patch_size, patch_size), 0, dtype=torch.float))
     elif typ == 'random':
       # uniform distribution range from -2 to -2
-      self.params = torch.nn.Parameter(data=(torch.rand((3, patch_size, patch_size)) * 2 - 1) * 2)
+      self.params = torch.nn.Parameter(data=(torch.rand((3, patch_size, patch_size), dtype=torch.float) * 2 - 1) * 2)
     # both options force the patch to have valid rgb values
     if tanh:
       self.constraint = lambda params:0.5 * (torch.tanh(params) + 1)
