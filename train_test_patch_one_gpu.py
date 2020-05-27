@@ -275,6 +275,10 @@ def train():
           = allocate_memory_for_stateful_components(cuda_device_id, target_prior_weight)
       _ = load_checkpoint_and_get_epoch(patch_module_gpu, patch_optimizer, patch_lr_scheduler,
                                         ensemble_weights_module_gpu, ensemble_weights_optimizer)
+  if FLAGS.tune_tracking_interval is not 0:
+    # saves the metric if it's not already reported in intervals
+    torch.cuda.empty_cache()
+    _ = generate_statistics_and_scalar_metric()
 
 
 
@@ -359,9 +363,6 @@ def _patch_path():
 
 def main(argv):
   train()
-  if FLAGS.tune_tracking_interval is not 0:
-    torch.cuda.empty_cache()
-    _ = generate_statistics_and_scalar_metric()
 
 
 if __name__ == '__main__':
