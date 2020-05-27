@@ -124,7 +124,7 @@ config_space.add_hyperparameter(yolov3_object_weight_hp)
 config_space.add_condition(CS.EqualsCondition(yolov3_object_weight_hp, train_yolov3_hp, "3"))
 
 experiment_metrics = dict(metric="worst_case_iou", mode="min")
-bohb_hyperband = HyperBandForBOHB(time_attr="training_iteration",max_t=n_epochs,**experiment_metrics)
+bohb_hyperband = HyperBandForBOHB(time_attr="reporting_interval",max_t=n_epochs,**experiment_metrics)
 bohb_search = TuneBOHB(config_space, **experiment_metrics)
 
 analysis = tune.run(train_one_gpu_early_stopping,
