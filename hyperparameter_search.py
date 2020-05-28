@@ -68,15 +68,6 @@ def train_one_gpu_early_stopping(config):
   argv = flags.split()[1:]
   FLAGS(argv)
   train()
-  if tracking_interval is 0:
-    if os.path.exists("logs/metric.txt"):
-      textfile = open("logs/metric.txt", 'r')
-      metric = float(textfile.readline())
-      textfile.close()
-      os.remove("logs/metric.txt")
-      tune.track.log(worst_case_iou=metric, done=True)
-    else:
-      raise Exception("trial failed")
     
     
 config_space = CS.ConfigurationSpace()

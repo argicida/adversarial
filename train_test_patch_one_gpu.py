@@ -271,15 +271,16 @@ def train():
       metric = generate_statistics_and_scalar_metric()
       torch.cuda.empty_cache()
       track.log(worst_case_iou=metric, done=((epoch + 1) == FLAGS.n_epochs),
-                reporting_interval=(epoch+1) % FLAGS.tune_tracking_interval)
+                reporting_interval=int((epoch+1) / FLAGS.tune_tracking_interval))
       patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer \
           = allocate_memory_for_stateful_components(cuda_device_id, target_prior_weight)
       _ = load_checkpoint_and_get_epoch(patch_module_gpu, patch_optimizer, patch_lr_scheduler,
                                         ensemble_weights_module_gpu, ensemble_weights_optimizer)
   if FLAGS.tune_tracking_interval is not 0:
-    # saves the metric if it's not already reported in intervals
+    # reports the metric if it's not already reported in intervals
     torch.cuda.empty_cache()
-    _ = generate_statistics_and_scalar_metric()
+    metric = generate_statistics_and_scalar_metric()
+    track.log(worst_case_iou=metric, done=True)
 
 
 
