@@ -263,18 +263,24 @@ def train():
       tensorboard_writer.add_image('patch', adv_patch_cpu_tensor.numpy(), epoch) # tensorboard colors are buggy
     if FLAGS.verbose: print('EPOCH LOSS: %.3f\n'%epoch_total_loss_mean)
     # INTERVAL METRIC REPORTING
-    if FLAGS.tune_tracking_interval != 0 and (epoch+1) % FLAGS.tune_tracking_interval == 0:
+    if FLAGS.tune_tracking_interval != 0 and ((epoch+1) % FLAGS.tune_tracking_interval == 0):
       save_checkpoint(epoch, patch_module_gpu, patch_optimizer, patch_lr_scheduler,
                       ensemble_weights_module_gpu, ensemble_weights_optimizer)
       del patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer
       torch.cuda.empty_cache()
       metric = generate_statistics_and_scalar_metric()
       torch.cuda.empty_cache()
-      track.log(worst_case_iou=metric, done=((epoch + 1) == FLAGS.n_epochs), training_iteration=epoch)
+      track.log(worst_case_iou=metric, done=((epoch + 1) == FLAGS.n_epochs),
+                reporting_interval=int((epoch+1) / FLAGS.tune_tracking_interval))
       patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer \
           = allocate_memory_for_stateful_components(cuda_device_id, target_prior_weight)
       _ = load_checkpoint_and_get_epoch(patch_module_gpu, patch_optimizer, patch_lr_scheduler,
                                         ensemble_weights_module_gpu, ensemble_weights_optimizer)
+  if FLAGS.tune_tracking_interval is not 0:
+    # reports the metric if it's not already reported in intervals
+    torch.cuda.empty_cache()
+    metric = generate_statistics_and_scalar_metric()
+    track.log(worst_case_iou=metric, done=True)
 
 
 
@@ -359,9 +365,6 @@ def _patch_path():
 
 def main(argv):
   train()
-  if FLAGS.tune_tracking_interval is not 0:
-    torch.cuda.empty_cache()
-    _ = generate_statistics_and_scalar_metric()
 
 
 if __name__ == '__main__':
