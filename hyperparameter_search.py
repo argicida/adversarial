@@ -20,6 +20,7 @@ parser.add_argument("--ni", type=int, default=5, help="number of tracking interv
 parser.add_argument("--ne", type=int, default=50, help="number of epochs in a session, "
                                                        "for when interval tracking is disabled")
 parser.add_argument("--rs", type=bool, default=True, help="whether to redirect stdout to logfile")
+parser.add_argument("--rsm", type=str, default=None, help="directory to resume session from")
 
 args = parser.parse_args()
 mini_batch_size = args.mbs
@@ -27,11 +28,15 @@ tracking_interval = args.ti
 n_epochs = tracking_interval*args.ni if args.ti != 0 else args.ne
 
 _init_time = datetime.now()
-logdir = f"logs_hpo_{_init_time.astimezone().tzinfo.tzname(None)+_init_time.strftime('%Y%m%d_%H_%M_%S_%f')}"
-if not os.path.exists(logdir):
-  os.makedirs(logdir)
+if args.rsm:
+  logdir = args.rsm
+else:
+  logdir = f"logs_hpo_{_init_time.astimezone().tzinfo.tzname(None)+_init_time.strftime('%Y%m%d_%H_%M_%S_%f')}"
+  if not os.path.exists(logdir):
+    os.makedirs(logdir)
+
 if args.rs:
-  sys.stdout = open(os.path.join(logdir, "stdout.txt"), "w")
+  sys.stdout = open(os.path.join(logdir, "stdout.txt"), "a")
 
 standard_flags = f'--eval_yolov2=True --eval_ssd=True --eval_yolov3=True ' \
                  f'--n_epochs={n_epochs} --mini_bs={mini_batch_size} ' \
@@ -122,6 +127,7 @@ analysis = tune.run(train_one_gpu_early_stopping,
     name=logdir,
     scheduler=bohb_hyperband,
     search_alg=bohb_search,
+    resume=(args.rsm is not None),
     num_samples=args.nt, resources_per_trial={"gpu":1}, local_dir="./")
 print("Best config: ", analysis.get_best_config(metric="worst_case_iou", mode="min"))
 # saves relevant summary data to file under logdir
