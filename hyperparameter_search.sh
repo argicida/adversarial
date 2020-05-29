@@ -16,7 +16,7 @@
 
 # To send emails, set the adcdress below and remove one of the "#" signs.
 # IMPORTANT : GIVES GPU FAILURE NOTIFICATIONS
-#SBATCH --mail-user xxd9704@rit.edu
+#SBATCH --mail-user cwl4602@rit.edu
 # notify on state change: BEGIN, END, FAIL or ALL
 #SBATCH --mail-type=ALL
 
@@ -49,5 +49,5 @@
 # spack list for all available packages
 # spack info for more information on a particular package
 source ./venv/bin/activate
-python3 hyperparameter_search.py --config_dir=config_files/config_standard.json
+python3 hyperparameter_search.py --config_file=config_files/config_best.json
 deactivate
