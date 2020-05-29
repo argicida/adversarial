@@ -1,3 +1,6 @@
+# hpo session configs
+config_files
+
 # logging
 logs*/
 
@@ -12,17 +15,8 @@ hyperparameter_search.err
 hyperparameter_search.out
 
 # videos
-test_videos/*
+test_videos
 videos_results.txt
-
-# patch testing output
-test_results.txt
-testing/*/*.png
-testing/*/*/*.txt
-clean_results.json
-noise_results.json
-patch_results.json
-saved_patches/*
 
 # dataset
 implementations/ssd-pytorch/ssd.pytorch/VOCdevkit

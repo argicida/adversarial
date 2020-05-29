@@ -13,7 +13,7 @@ from ray.tune.suggest.bohb import TuneBOHB
 from train_test_patch_one_gpu import train
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config_dir", default="config_files/config_standard.json", help="Directory for JSON config file")
+parser.add_argument("--config_file", default="config_files/config_standard.json", help="Directory for JSON config file")
 parser.add_argument("--rsm", type=str, default=None, help="directory to resume session from")
 args = parser.parse_args()
 
@@ -52,7 +52,7 @@ def train_one_gpu_early_stopping(config):
   train()
 
 # Load JSON config file
-with open(args.config_filepath) as config_file:
+with open(args.config_file) as config_file:
   data = json.load(config_file)
 
 # Extract settings + hyperparameter config
