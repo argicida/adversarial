@@ -12,6 +12,10 @@ from ray.tune.suggest.bohb import TuneBOHB
 
 from train_test_patch_one_gpu import train
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--config_dir", default="config_files/config_standard.json", help="Directory for JSON config file")
+args = parser.parse_args()
+
 standard_flags = f'--eval_yolov2=True --eval_ssd=True --eval_yolov3=True ' \
                  f'--inria_train_dir=../../inria/Train/pos --printable_vals_filepath=../../non_printability/30values.txt ' \
                  f'--inria_test_dir=../../inria/Test/pos --logdir=logs --yolov2_cfg_file=../../cfg/yolov2.cfg ' \
@@ -45,6 +49,14 @@ def train_one_gpu_early_stopping(config):
   argv = flags.split()[1:]
   FLAGS(argv)
   train()
+    
+# Load JSON config file
+with open(args.config_dir) as config_file:
+    data = json.load(config_file)
+
+# Extract settings + hyperparameter config
+config = data['hyperparameter_config_space']
+setting_list = data['settings']
 
 # Define logdir file, create it if does not exist
 _init_time = datetime.now()
@@ -54,17 +66,9 @@ if not os.path.exists(logdir):
   os.makedirs(logdir)
 if setting_list['redirect_stdout'] == 'True':
   sys.stdout = open(os.path.join(logdir, "stdout.txt"), "w")
-    
-# Load JSON config file
-with open(config_file) as config_file:
-    data = json.load(config_file)
-
-# Extract settings + hyperparameter config
-config = data['hyperparameter_config_space']
-setting_list = data['settings']
 
 # Get number of samples and mini batch size
-n_samples = setting_list['n_samples']
+n_samples = int(setting_list['n_samples'])
 mini_batch_size = setting_list['mini_batch_size']
 
 # Check if early stopping is enabled. If it is, include tracking interval in flags. Also calculate n_epochs
@@ -104,7 +108,6 @@ for name,settings in config['search_space'].items():
 experiment_metrics = dict(metric="worst_case_iou", mode="min")
 bohb_hyperband = HyperBandForBOHB(time_attr="training_iteration",max_t=n_epochs,**experiment_metrics)
 bohb_search = TuneBOHB(config_space, **experiment_metrics)
-
 analysis = tune.run(train_one_gpu_early_stopping,
     name=logdir,
     scheduler=bohb_hyperband,
