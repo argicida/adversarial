@@ -82,10 +82,12 @@ mini_batch_size = setting_list['mini_batch_size']
 
 # Check if early stopping is enabled. If it is, include tracking interval in flags. Also calculate n_epochs
 if setting_list['early_stopping'] == 'True':
+  early_stopping = True
   tracking_interval = setting_list['tracking_interval']
   standard_flags+=f" --tune_tracking_interval={tracking_interval}"
   n_epochs = int(tracking_interval)*int(setting_list['n_tracking_intervals'])
 else:
+  early_stopping = False
   n_epochs = int(setting_list['n_epochs'])
 
 # Add n_epochs and mini batch size to flags
@@ -119,7 +121,7 @@ for name,settings in config['search_space'].items():
 experiment_metrics = dict(metric="worst_case_iou", mode="min")
 bohb_hyperband = HyperBandForBOHB(time_attr="training_iteration",max_t=n_epochs,**experiment_metrics)
 bohb_search = TuneBOHB(config_space, **experiment_metrics)
-analysis = tune.run(train_one_gpu_early_stopping,
+analysis = tune.run(train_one_gpu_early_stopping if early_stopping else train_one_gpu,
     name=logdir,
     scheduler=bohb_hyperband,
     search_alg=bohb_search,
