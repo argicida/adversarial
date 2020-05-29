@@ -26,10 +26,10 @@ standard_flags = f'--eval_yolov2=True --eval_ssd=True --eval_yolov3=True ' \
                  f'--example_patch_file=../../saved_patches/perry_08-26_500_epochs.jpg ' \
                  f'--tensorboard_epoch=False --train_ssd=1'
 
-def train_one_gpu(config):
+def train_one_gpu(conf):
     flags = f'python3 ../../train_test_patch_one_gpu.py {standard_flags}'
-    for i in config:
-      flags+=f' --{i}={str(config[i])}'
+    for i in conf:
+      flags+=f' --{i}={str(conf[i])}'
     os.system(flags)
     if os.path.exists("logs/metric.txt"):
       textfile = open("logs/metric.txt", 'r')
@@ -41,12 +41,12 @@ def train_one_gpu(config):
       print("Trial Failed!")
 
 
-def train_one_gpu_early_stopping(config):
+def train_one_gpu_early_stopping(conf):
   from cli_config import FLAGS
   FLAGS.unparse_flags()
   flags = f'python3 ../../train_test_patch_one_gpu.py {standard_flags}'
-  for i in config:
-    flags += f' --{i}={str(config[i])}'
+  for i in conf:
+    flags += f' --{i}={str(conf[i])}'
   argv = flags.split()[1:]
   FLAGS(argv)
   train()
@@ -74,7 +74,7 @@ if setting_list['redirect_stdout'] == 'True':
   sys.stdout = open(os.path.join(logdir, "stdout.txt"), "a")
 
 # Get number of samples and mini batch size
-n_samples = setting_list['n_samples']
+n_samples = int(setting_list['n_samples'])
 mini_batch_size = setting_list['mini_batch_size']
 
 # Check if early stopping is enabled. If it is, include tracking interval in flags. Also calculate n_epochs
@@ -116,7 +116,6 @@ for name,settings in config['search_space'].items():
 experiment_metrics = dict(metric="worst_case_iou", mode="min")
 bohb_hyperband = HyperBandForBOHB(time_attr="training_iteration",max_t=n_epochs,**experiment_metrics)
 bohb_search = TuneBOHB(config_space, **experiment_metrics)
-
 analysis = tune.run(train_one_gpu_early_stopping,
     name=logdir,
     scheduler=bohb_hyperband,

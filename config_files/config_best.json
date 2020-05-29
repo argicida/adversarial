@@ -1,16 +1,22 @@
 {
-  "hyperparameter_search_settings": {
-    "num_samples": "10"
+  "settings": {
+    "n_samples": "50",
+    "mini_batch_size": "8",
+    "early_stopping": "False",
+    "n_epochs": "50",
+    "redirect_stdout": "True"
   },
   "hyperparameter_config_space": {
     "constants": {
-      "mini_batch_size": "8",
-      "tracking_interval": "10"
+      "train_yolov3": "1",
+      "activate_logits": "False",
+      "max_optim": "adam",
+      "minimax": "True"
     },
     "search_space": {
       "lr": {
         "type": "UF",
-        "lower": ".03",
+        "lower": ".05",
         "upper": ".13"
       },
       "num_mini": {
@@ -23,34 +29,19 @@
         "lower": "1",
         "upper": "50"
       },
-      "activate_logits": {
-        "type": "C",
-        "options": "True,False"
-      },
       "confidence_processor": {
         "type": "C",
-        "options": "avg,max,det_max,det_avg,det_max_avg"
-      },
-      "minimax": {
-        "type": "C",
-        "options": "True,False"
+        "options": "det_avg,det_max_avg"
       },
       "minimax_gamma": {
         "type": "UF",
-        "lower": "0",
-        "upper": "100",
-        "condition": "minimax,True"
-      },
-      "max_optim": {
-        "type": "C",
-        "options": "sgd,adam",
-        "condition": "minimax,True"
+        "lower": "10",
+        "upper": "70"
       },
       "max_lr": {
         "type": "UF",
-        "lower": ".03",
-        "upper": ".13",
-        "condition": "minimax,True"
+        "lower": ".05",
+        "upper": ".13"
       },
       "start_patch": {
         "type": "C",
@@ -58,38 +49,28 @@
       },
       "train_yolov2": {
         "type": "C",
-        "options": "1,2,3"
-      },
-      "train_yolov3": {
-        "type": "C",
-        "options": "1,2,3"
+        "options": "2,3"
       },
       "yolov2_prior_weight": {
         "type": "UF",
         "lower": "-10",
-        "upper": "10"
+        "upper": "5"
       },
       "yolov3_prior_weight": {
         "type": "UF",
-        "lower": "-10",
+        "lower": "-5",
         "upper": "10"
       },
       "ssd_prior_weight": {
         "type": "UF",
         "lower": "-10",
-        "upper": "10"
+        "upper": "2"
       },
       "yolov2_object_weight": {
         "type": "UF",
-        "lower": "0",
+        "lower": "0.00001",
         "upper": "1",
         "condition": "train_yolov2,3"
-      },
-      "yolov3_object_weight": {
-        "type": "UF",
-        "lower": "0",
-        "upper": "1",
-        "condition": "train_yolov3,3"
       }
     }
   }

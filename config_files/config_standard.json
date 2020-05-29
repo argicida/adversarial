@@ -1,10 +1,10 @@
 {
   "settings": {
-    "n_samples": "10"
+    "n_samples": "50",
     "mini_batch_size": "8",
     "early_stopping": "False",
     "n_epochs": "50",
-    "redirect_stdout": "True",
+    "redirect_stdout": "True"
   },
   "hyperparameter_config_space": {
     "constants": {

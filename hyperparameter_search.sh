@@ -49,5 +49,5 @@
 # spack list for all available packages
 # spack info for more information on a particular package
 source ./venv/bin/activate
-python3 hyperparameter_search.py
+python3 hyperparameter_search.py --config_dir=config_files/config_standard.json
 deactivate

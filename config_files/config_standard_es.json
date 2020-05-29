@@ -1,11 +1,11 @@
 {
   "settings": {
-    "n_samples": "10"
+    "n_samples": "50",
     "mini_batch_size": "8",
     "early_stopping": "True",
     "n_tracking_intervals": "5",
     "tracking_interval": "10",
-    "redirect_stdout": "True",
+    "redirect_stdout": "True"
   },
   "hyperparameter_config_space": {
     "constants": {
