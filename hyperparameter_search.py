@@ -51,14 +51,6 @@ def train_one_gpu_early_stopping(conf):
   FLAGS(argv)
   train()
 
-# Load JSON config file
-with open(args.config_file) as config_file:
-  data = json.load(config_file)
-
-# Extract settings + hyperparameter config
-config = data['hyperparameter_config_space']
-setting_list = data['settings']
-
 # Define logdir file, create it if does not exist
 _init_time = datetime.now()
 if args.rsm:
@@ -67,9 +59,20 @@ else:
   logdir = f"logs_hpo_{_init_time.astimezone().tzinfo.tzname(None)+_init_time.strftime('%Y%m%d_%H_%M_%S_%f')}"
   if not os.path.exists(logdir):
     os.makedirs(logdir)
-
 if not os.path.exists(logdir):
   os.makedirs(logdir)
+
+# Load JSON config file
+with open(args.config_file) as config_file:
+  data = json.load(config_file)
+  # makes a copy of it in the session log
+  with open(os.path.join(logdir, "config.json"), 'w') as copy:
+    json.dump(data, copy)
+
+# Extract settings + hyperparameter config
+config = data['hyperparameter_config_space']
+setting_list = data['settings']
+
 if setting_list['redirect_stdout'] == 'True':
   sys.stdout = open(os.path.join(logdir, "stdout.txt"), "a")
 
