@@ -14,5 +14,5 @@ pip install torchvision
 pip install -U ray
 pip install 'ray[tune]'
 module unload blindfold
-pip install hpbandster ConfigSpace
+pip install.bashj
 deactivate
