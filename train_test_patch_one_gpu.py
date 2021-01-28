@@ -2,10 +2,10 @@ import torch
 import os
 import json
 import math
+import sys
 from absl import app
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from ray.tune import track
 from tensorboardX import SummaryWriter
 
 from cli_config import FLAGS
@@ -19,13 +19,15 @@ from test_patch import test_on_all_detectors, SUPPORTED_TEST_DETECTORS
 def train():
   if not os.path.exists(FLAGS.logdir):
     os.makedirs(FLAGS.logdir)
+  sys.stdout = open(os.path.join(FLAGS.logdir, "train_stdout.txt"), "a")
+  sys.stderr = open(os.path.join(FLAGS.logdir, "train_stderr.txt"), "a")
   flags_dict = FLAGS.flag_values_dict()
   if FLAGS.verbose: print("FLAGS", flags_dict)
   with open(os.path.join(FLAGS.logdir, 'flags.json'), 'w') as fp:
     json.dump(flags_dict, fp)
   tensorboard_writer = SummaryWriter(logdir=FLAGS.logdir) if FLAGS.tensorboard_batch or FLAGS.tensorboard_epoch else None
   check_detector_output_processor_exists(FLAGS.confidence_processor)
-  cuda_device_id = 0 # we only use a single GPU at the moment
+  cuda_device_id = torch.cuda.current_device() # we only use a single GPU at the moment
   target_settings = {}
   target_devices = {}
   target_prior_weight = {}
@@ -52,11 +54,11 @@ def train():
       = allocate_memory_for_stateful_components(cuda_device_id, target_prior_weight)
   norm_prior_ensemble_weights_gpu = ensemble_weights_module_gpu().detach().clone()
   start_epoch = continue_from_checkpoint_if_exists_and_get_epoch(patch_module_gpu, patch_optimizer, patch_lr_scheduler,
-                                                                ensemble_weights_module_gpu, ensemble_weights_optimizer)
+                                                                 ensemble_weights_module_gpu, ensemble_weights_optimizer)
   if FLAGS.verbose: print("Session Initialized")
   
   batch_size = FLAGS.mini_bs * FLAGS.num_mini
-  n_batches = math.ceil(len(train_loader) / batch_size)
+  n_batches = math.floor(len(train_loader) / batch_size)
   n_mini_batches = FLAGS.num_mini
 
   # print("allocated")
@@ -74,6 +76,7 @@ def train():
     epoch_weighted_printability_loss_sum = 0.0
     epoch_weighted_patch_variation_loss_sum = 0.0
     minibatch_iterator = iter(train_loader)
+    minibatch_iterator_duplicate = iter(train_loader)
     for nth_batch in range(n_batches):
       if FLAGS.verbose: print('  BATCH NR: ', nth_batch)
       batch_extracted_confidence = {detector_name:0.0 for detector_name in target_settings}
@@ -134,7 +137,7 @@ def train():
         for nth_mini_batch in range(FLAGS.num_mini):
           if FLAGS.minimax:
             #images, normed_labels_dict = mini_batches[nth_mini_batch]
-            images, normed_labels_dict = next(minibatch_iterator)
+            images, normed_labels_dict = next(minibatch_iterator_duplicate)
           else:
             images, normed_labels_dict = next(minibatch_iterator)
           adv_patch_gpu = patch_module_gpu()
@@ -229,27 +232,7 @@ def train():
                                       epoch)
       tensorboard_writer.add_image('patch', adv_patch_cpu_tensor.numpy(), epoch) # tensorboard colors are buggy
     if FLAGS.verbose: print('EPOCH LOSS: %.3f\n'%epoch_total_loss_mean)
-    # INTERVAL METRIC REPORTING
-    if FLAGS.tune_tracking_interval != 0 and ((epoch+1) % FLAGS.tune_tracking_interval == 0):
-      save_checkpoint(epoch, patch_module_gpu, patch_optimizer, patch_lr_scheduler,
-                      ensemble_weights_module_gpu, ensemble_weights_optimizer)
-      del patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer
-      torch.cuda.empty_cache()
-      metric = generate_statistics_and_scalar_metric()
-      torch.cuda.empty_cache()
-      track.log(worst_case_iou=metric, done=((epoch + 1) == FLAGS.n_epochs),
-                reporting_interval=int((epoch+1) / FLAGS.tune_tracking_interval))
-      patch_module_gpu, patch_optimizer, patch_lr_scheduler, ensemble_weights_module_gpu, ensemble_weights_optimizer \
-          = allocate_memory_for_stateful_components(cuda_device_id, target_prior_weight)
-      _ = load_checkpoint_and_get_epoch(patch_module_gpu, patch_optimizer, patch_lr_scheduler,
-                                        ensemble_weights_module_gpu, ensemble_weights_optimizer)
-  if FLAGS.tune_tracking_interval is not 0:
-    # reports the metric if it's not already reported in intervals
-    torch.cuda.empty_cache()
-    metric = generate_statistics_and_scalar_metric()
-    track.log(worst_case_iou=metric, done=True)
-
-
+  return generate_statistics_and_scalar_metric()
 
 
 def manager_output_into_target_loss_gpu_dict(flags_dict:dict, target_settings:dict, outputs_by_target:dict) -> dict:
